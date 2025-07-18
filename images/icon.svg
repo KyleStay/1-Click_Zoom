@@ -1,9 +1,18 @@
 <svg width="256" height="256" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-<rect width="100" height="100" rx="20" fill="#0969da"/>
+<!-- Browser window background -->
+<rect width="100" height="100" rx="20" fill="#f6f8fa"/>
+<path d="M0 20C0 8.95431 8.95431 0 20 0H80C91.0457 0 100 8.95431 100 20V30H0V20Z" fill="#d0d7de"/>
+<!-- Window control buttons -->
+<circle cx="15" cy="15" r="4" fill="#ff5f57"/>
+<circle cx="27" cy="15" r="4" fill="#ffbd2e"/>
+<circle cx="39" cy="15" r="4" fill="#28c940"/>
+
 <g>
-<circle cx="42" cy="42" r="22" stroke="white" stroke-width="8" fill="none"/>
-<line x1="60" y1="60" x2="80" y2="80" stroke="white" stroke-width="10" stroke-linecap="round"/>
-<line x1="42" y1="32" x2="42" y2="52" stroke="white" stroke-width="7" stroke-linecap="round"/>
-<line x1="32" y1="42" x2="52" y2="42" stroke="white" stroke-width="7" stroke-linecap="round"/>
+<!-- Magnifying glass -->
+<line x1="60" y1="60" x2="80" y2="80" stroke="#0969da" stroke-width="10" stroke-linecap="round"/>
+<circle cx="42" cy="42" r="22" stroke="#0969da" stroke-width="8" fill="#FFFFFF"/>
+<!-- Plus sign -->
+<line x1="42" y1="32" x2="42" y2="52" stroke="#0969da" stroke-width="7" stroke-linecap="round"/>
+<line x1="32" y1="42" x2="52" y2="42" stroke="#0969da" stroke-width="7" stroke-linecap="round"/>
 </g>
 </svg>
