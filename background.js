@@ -4,17 +4,22 @@ const CONTEXT_MENU_ID = "configureZoom";
 // --- Event Listeners ---
 
 // On installation, set default values and configure the initial state.
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.sync.get(['globalZoom', 'toggleZoom', 'toggleModeEnabled', 'isToggledActive'], (data) => {
+chrome.runtime.onInstalled.addListener((details) => {
+  // Check if the reason for installation is a fresh install.
+  if (details.reason === 'install') {
+    // Unconditionally set the default state for a new user.
     chrome.storage.sync.set({
-      globalZoom: data.globalZoom || 100,
-      toggleZoom: data.toggleZoom || 150,
-      toggleModeEnabled: data.toggleModeEnabled || false,
-      isToggledActive: data.isToggledActive || false // Tracks the state of 1-Click Mode
+      globalZoom: 100,
+      toggleZoom: 150,
+      toggleModeEnabled: false,
+      isToggledActive: false
     }, () => {
       updateActionBehavior();
     });
-  });
+  } else {
+    // For updates or other reasons, just ensure the behavior is correct.
+    updateActionBehavior();
+  }
 });
 
 // Listen for messages from the popup to update behavior.
