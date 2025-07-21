@@ -6,12 +6,16 @@ document.addEventListener('DOMContentLoaded', function() {
   const saveButton = document.getElementById('saveButton');
   const statusDiv = document.getElementById('status');
   const presetButtons = document.querySelectorAll('.preset-btn');
+  const versionInfoDiv = document.getElementById('version-info');
 
   // --- Load Initial State ---
   chrome.storage.sync.get(['globalZoom', 'toggleZoom', 'toggleModeEnabled'], (data) => {
     toggleModeCheckbox.checked = data.toggleModeEnabled || false;
     updateUI(data.toggleModeEnabled, data);
   });
+
+  // Display the extension version
+  displayVersion();
 
   // --- Event Listeners ---
 
@@ -60,7 +64,6 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
           showStatus('Settings saved!', 'green');
           if (shouldClose) {
-            // Give a moment for the user to see the status update before closing.
             setTimeout(() => window.close(), 300);
           }
         }
@@ -80,15 +83,10 @@ document.addEventListener('DOMContentLoaded', function() {
   function applyGlobalZoomToAllTabs(zoomLevel, shouldClose) {
     const zoomFactor = zoomLevel / 100;
 
-    // Get all normal browser windows, and populate them with their tabs.
     chrome.windows.getAll({ populate: true, windowTypes: ['normal'] }, (windows) => {
-        // Iterate over each window.
         windows.forEach((win) => {
-            // Iterate over each tab in the window.
             win.tabs.forEach((tab) => {
-                // Check if the tab has a web URL before trying to set zoom.
                 if (tab.url && (tab.url.startsWith('http') || tab.url.startsWith('https'))) {
-                    // Set zoom, ignoring errors for tabs that can't be zoomed.
                     chrome.tabs.setZoom(tab.id, zoomFactor).catch((error) => {
                         console.error(`Could not set zoom for tab ${tab.id}: ${error.message}`);
                     });
@@ -120,6 +118,14 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   /**
+   * Gets the version from the manifest and displays it in the popup.
+   */
+  function displayVersion() {
+      const manifest = chrome.runtime.getManifest();
+      versionInfoDiv.textContent = `v${manifest.version}`;
+  }
+
+  /**
    * Displays a status message to the user.
    * @param {string} message - The text to display.
    * @param {string} color - The color of the text.
@@ -127,7 +133,6 @@ document.addEventListener('DOMContentLoaded', function() {
   function showStatus(message, color) {
     statusDiv.textContent = message;
     statusDiv.style.color = color;
-    // Set a timeout to clear the message, but don't worry if the window closes first.
     setTimeout(() => {
       if(statusDiv) {
           statusDiv.textContent = '';

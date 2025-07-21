@@ -56,8 +56,8 @@
         border-color: #8b949e;
     }
     #reset-btn {
-        flex-grow: 1; /* Allow it to fill the space */
-        width: auto; /* Override fixed width */
+        flex-grow: 1;
+        width: auto;
         padding: 8px 12px;
         font-size: 14px;
         font-weight: 500;
@@ -94,6 +94,7 @@
 
     #saveButton { margin-top: 16px; width: 100%; padding: 10px; border: none; border-radius: 6px; background-color: #0969da; color: white; font-size: 14px; font-weight: 500; cursor: pointer; }
     #status { margin-top: 12px; font-size: 12px; height: 16px; }
+    #version-info { font-size: 10px; color: #8b949e; margin-top: 12px; }
   </style>
 </head>
 <body>
@@ -143,6 +144,7 @@
 
   <button id="saveButton">Save</button>
   <div id="status"></div>
+  <div id="version-info"></div>
 
   <script src="popup.js"></script>
 </body>
