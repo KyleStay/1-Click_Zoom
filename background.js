@@ -1,5 +1,6 @@
 // --- Constants and Initial Setup ---
 const CONTEXT_MENU_ID = "configureZoom";
+let configWindowId = null; // Variable to store the ID of the settings window
 
 // --- Event Listeners ---
 
@@ -72,6 +73,13 @@ chrome.contextMenus.onClicked.addListener((info) => {
   }
 });
 
+// When the settings window is closed, reset its ID.
+chrome.windows.onRemoved.addListener((windowId) => {
+    if (windowId === configWindowId) {
+        configWindowId = null;
+    }
+});
+
 
 // --- Core Functions ---
 
@@ -124,13 +132,36 @@ function applyZoomToFutureTab(tabId) {
 }
 
 /**
- * Opens the popup.html file in a new, small window for configuration.
+ * Opens the popup.html file, or focuses it if it's already open.
  */
 function openConfigurationPage() {
-  chrome.windows.create({
-    url: 'popup.html',
-    type: 'popup',
-    width: 280,
-    height: 490 // Increased height to prevent scrollbars
-  });
+  if (configWindowId !== null) {
+    // If a window ID is stored, try to focus it.
+    chrome.windows.get(configWindowId, (foundWindow) => {
+        if (chrome.runtime.lastError) {
+            // The window doesn't exist anymore, so create a new one.
+            createConfigWindow();
+        } else {
+            // The window exists, so just focus it.
+            chrome.windows.update(configWindowId, { focused: true });
+        }
+    });
+  } else {
+    // No window ID stored, so create a new one.
+    createConfigWindow();
+  }
+}
+
+/**
+ * Creates a new configuration window and stores its ID.
+ */
+function createConfigWindow() {
+    chrome.windows.create({
+        url: 'popup.html',
+        type: 'popup',
+        width: 280,
+        height: 500
+    }, (win) => {
+        configWindowId = win.id;
+    });
 }
