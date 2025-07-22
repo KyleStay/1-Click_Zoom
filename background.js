@@ -131,6 +131,6 @@ function openConfigurationPage() {
     url: 'popup.html',
     type: 'popup',
     width: 280,
-    height: 450
+    height: 490 // Increased height to prevent scrollbars
   });
 }
