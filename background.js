@@ -6,9 +6,7 @@ let configWindowId = null; // Variable to store the ID of the settings window
 
 // On installation, set default values and configure the initial state.
 chrome.runtime.onInstalled.addListener((details) => {
-  // Check if the reason for installation is a fresh install.
   if (details.reason === 'install') {
-    // Unconditionally set the default state for a new user.
     chrome.storage.sync.set({
       globalZoom: 100,
       toggleZoom: 150,
@@ -18,7 +16,6 @@ chrome.runtime.onInstalled.addListener((details) => {
       updateActionBehavior();
     });
   } else {
-    // For updates or other reasons, just ensure the behavior is correct.
     updateActionBehavior();
   }
 });
@@ -32,23 +29,24 @@ chrome.runtime.onMessage.addListener((message) => {
 
 // Listen for a left-click on the extension icon. This is only active in 1-Click Mode.
 chrome.action.onClicked.addListener(() => {
-    // This listener is active when in 1-Click Mode. It flips the toggle state
-    // and applies the correct zoom to all current tabs.
     chrome.storage.sync.get(['toggleZoom', 'isToggledActive'], (data) => {
         if (!data.toggleZoom) return;
 
         const newToggledState = !data.isToggledActive;
         const targetZoomFactor = newToggledState ? (data.toggleZoom / 100) : 1.0;
 
-        // Save the new state
         chrome.storage.sync.set({ isToggledActive: newToggledState }, () => {
-            // Apply the new zoom to all tabs in all windows
             chrome.windows.getAll({ populate: true, windowTypes: ['normal'] }, (windows) => {
                 windows.forEach((win) => {
                     win.tabs.forEach((tab) => {
                         if (tab.id && tab.url && (tab.url.startsWith('http') || tab.url.startsWith('https'))) {
-                            chrome.tabs.setZoom(tab.id, targetZoomFactor).catch(err => {
-                                console.error(`Could not set zoom for tab ${tab.id}: ${err.message}`);
+                            // Smart Check: Only set zoom if it's different from the target.
+                            chrome.tabs.getZoom(tab.id, (currentZoomFactor) => {
+                                if (Math.abs(currentZoomFactor - targetZoomFactor) > 0.01) {
+                                    chrome.tabs.setZoom(tab.id, targetZoomFactor).catch(err => {
+                                        console.error(`Could not set zoom for tab ${tab.id}: ${err.message}`);
+                                    });
+                                }
                             });
                         }
                     });
@@ -60,7 +58,6 @@ chrome.action.onClicked.addListener(() => {
 
 // Listen for tab updates to apply the correct zoom to future tabs in either mode.
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  // Ensure the tab is fully loaded before applying zoom.
   if (changeInfo.status === 'complete' && tab.url && tab.url.startsWith('http')) {
     applyZoomToFutureTab(tabId);
   }
@@ -89,18 +86,15 @@ chrome.windows.onRemoved.addListener((windowId) => {
 function updateActionBehavior() {
   chrome.storage.sync.get('toggleModeEnabled', (data) => {
     if (data.toggleModeEnabled) {
-      // Enable 1-Click Mode: Left-click toggles, right-click configures.
-      chrome.action.setPopup({ popup: '' }); // Disable popup
+      chrome.action.setPopup({ popup: '' });
       chrome.contextMenus.create({
         id: CONTEXT_MENU_ID,
         title: "Configure Zoom",
         contexts: ["action"]
       });
     } else {
-      // Disable 1-Click Mode: Left-click opens popup.
-      chrome.action.setPopup({ popup: 'popup.html' }); // Enable popup
+      chrome.action.setPopup({ popup: 'popup.html' });
       chrome.contextMenus.removeAll();
-      // When switching back to global mode, reset the toggle state for consistency.
       chrome.storage.sync.set({ isToggledActive: false });
     }
   });
@@ -112,21 +106,23 @@ function updateActionBehavior() {
  */
 function applyZoomToFutureTab(tabId) {
   chrome.storage.sync.get(['globalZoom', 'toggleZoom', 'toggleModeEnabled', 'isToggledActive'], (data) => {
-    let zoomFactor = 1.0; // Default to 100%
+    let targetZoomFactor = 1.0;
 
     if (data.toggleModeEnabled) {
-      // In 1-Click Mode, use the toggle state.
       if (data.isToggledActive) {
-        zoomFactor = data.toggleZoom / 100;
+        targetZoomFactor = data.toggleZoom / 100;
       }
     } else {
-      // In Global Zoom Mode, use the global setting.
-      zoomFactor = data.globalZoom / 100;
+      targetZoomFactor = data.globalZoom / 100;
     }
 
-    // Apply the determined zoom factor.
-    if (zoomFactor) {
-        chrome.tabs.setZoom(tabId, zoomFactor).catch(err => console.error(err.message));
+    if (targetZoomFactor) {
+        // Smart Check: Only set zoom if it's different from the target.
+        chrome.tabs.getZoom(tabId, (currentZoomFactor) => {
+            if (Math.abs(currentZoomFactor - targetZoomFactor) > 0.01) {
+                chrome.tabs.setZoom(tabId, targetZoomFactor).catch(err => console.error(err.message));
+            }
+        });
     }
   });
 }
@@ -136,18 +132,14 @@ function applyZoomToFutureTab(tabId) {
  */
 function openConfigurationPage() {
   if (configWindowId !== null) {
-    // If a window ID is stored, try to focus it.
     chrome.windows.get(configWindowId, (foundWindow) => {
         if (chrome.runtime.lastError) {
-            // The window doesn't exist anymore, so create a new one.
             createConfigWindow();
         } else {
-            // The window exists, so just focus it.
             chrome.windows.update(configWindowId, { focused: true });
         }
     });
   } else {
-    // No window ID stored, so create a new one.
     createConfigWindow();
   }
 }
