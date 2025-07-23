@@ -16,16 +16,15 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
-      margin-bottom: 8px; /* Reduced margin to accommodate status */
+      margin-bottom: 8px;
     }
     .header h3 { margin: 0; font-size: 16px; font-weight: 600; }
     .header svg { width: 20px; height: 20px; stroke: #57606a; }
 
-    /* Status message new position */
     #status {
       font-size: 12px;
       height: 16px;
-      margin-bottom: 12px; /* Add space below the status message */
+      margin-bottom: 12px;
       font-weight: 500;
     }
 
@@ -111,8 +110,23 @@
   </div>
   <div id="status"></div>
 
+  <!-- 1-Click Mode Section -->
+  <div class="section" style="margin-top:0; border-top:none; padding-top:0;">
+    <div class="toggle-switch">
+      <span class="section-title" style="margin-bottom:0;">1-Click Mode</span>
+      <label class="switch">
+        <input type="checkbox" id="toggleModeCheckbox">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <ul class="info-list">
+        <li><b>Left-click icon:</b> Toggles the zoom.</li>
+        <li><b>Right-click icon:</b> Opens these settings.</li>
+    </ul>
+  </div>
+
   <!-- Configuration Section -->
-  <div id="config-section" class="section" style="margin-top:0; border-top:none; padding-top:0;">
+  <div id="config-section" class="section">
     <h4 id="config-title" class="section-title"></h4>
     <input type="number" id="zoomLevel" class="zoom-input" min="25" max="500">
     <div class="presets">
@@ -133,21 +147,6 @@
         <button class="preset-btn" data-zoom="50">50%</button>
       </div>
     </div>
-  </div>
-
-  <!-- 1-Click Mode Section -->
-  <div class="section">
-    <div class="toggle-switch">
-      <span class="section-title" style="margin-bottom:0;">1-Click Mode</span>
-      <label class="switch">
-        <input type="checkbox" id="toggleModeCheckbox">
-        <span class="slider"></span>
-      </label>
-    </div>
-    <ul class="info-list">
-        <li><b>Left-click icon:</b> Toggles the zoom.</li>
-        <li><b>Right-click icon:</b> Opens these settings.</li>
-    </ul>
   </div>
 
   <button id="saveButton">Save</button>
