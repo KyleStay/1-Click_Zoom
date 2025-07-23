@@ -36,7 +36,7 @@ chrome.action.onClicked.addListener(() => {
         const targetZoomFactor = newToggledState ? (data.toggleZoom / 100) : 1.0;
 
         chrome.storage.sync.set({ isToggledActive: newToggledState }, () => {
-            chrome.windows.getAll({ populate: true, windowTypes: ['normal'] }, (windows) => {
+            chrome.windows.getAll({ populate: true, windowTypes: ['normal', 'app'] }, (windows) => {
                 windows.forEach((win) => {
                     win.tabs.forEach((tab) => {
                         if (tab.id && tab.url && (tab.url.startsWith('http') || tab.url.startsWith('https'))) {
