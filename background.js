@@ -152,7 +152,7 @@ function createConfigWindow() {
         url: 'popup.html',
         type: 'popup',
         width: 280,
-        height: 507
+        height: 510
     }, (win) => {
         configWindowId = win.id;
     });
