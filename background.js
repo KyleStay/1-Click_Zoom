@@ -39,7 +39,7 @@ chrome.action.onClicked.addListener(() => {
             chrome.windows.getAll({ populate: true, windowTypes: ['normal', 'app'] }, (windows) => {
                 windows.forEach((win) => {
                     win.tabs.forEach((tab) => {
-                        if (tab.id && tab.url && (tab.url.startsWith('http') || tab.url.startsWith('https'))) {
+                        if (tab.id && tab.url && (tab.url.startsWith('http') || tab.url.startsWith('https') || tab.url.startsWith('file'))) {
                             // Smart Check: Only set zoom if it's different from the target.
                             chrome.tabs.getZoom(tab.id, (currentZoomFactor) => {
                                 if (Math.abs(currentZoomFactor - targetZoomFactor) > 0.01) {
@@ -58,7 +58,7 @@ chrome.action.onClicked.addListener(() => {
 
 // Listen for tab updates to apply the correct zoom to future tabs in either mode.
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.url && tab.url.startsWith('http')) {
+  if (changeInfo.status === 'complete' && tab.url && (tab.url.startsWith('http') || tab.url.startsWith('https') || tab.url.startsWith('file'))) {
     applyZoomToFutureTab(tabId);
   }
 });
