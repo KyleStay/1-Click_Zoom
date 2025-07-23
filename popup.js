@@ -25,6 +25,8 @@ document.addEventListener('DOMContentLoaded', function() {
         updateUI(isEnabled, data);
         chrome.runtime.sendMessage({ type: "SETTINGS_CHANGED" });
         showStatus('Mode updated!', 'green');
+
+        applyGlobalZoomToAllTabs(100, false);
       });
     });
   });
