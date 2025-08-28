@@ -1,10 +1,10 @@
 // --- Constants and Initial Setup ---
 const CONTEXT_MENU_ID = "configureZoom";
-let configWindowId = null; // Variable to store the ID of the settings window
+let configWindowId = null;
 
 // --- Event Listeners ---
 
-// On installation, set default values and configure the initial state.
+// On installation, set default values.
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
     chrome.storage.sync.set({
@@ -16,8 +16,14 @@ chrome.runtime.onInstalled.addListener((details) => {
       updateActionBehavior();
     });
   } else {
+    // On update, just ensure the behavior is correct.
     updateActionBehavior();
   }
+});
+
+// **FIX:** Add a listener for browser startup to ensure the correct action is set.
+chrome.runtime.onStartup.addListener(() => {
+  updateActionBehavior();
 });
 
 // Listen for messages from the popup to update behavior.
@@ -31,7 +37,6 @@ chrome.runtime.onMessage.addListener((message) => {
 chrome.action.onClicked.addListener(() => {
     chrome.storage.sync.get(['toggleZoom', 'isToggledActive'], (data) => {
         if (!data.toggleZoom) return;
-
         const newToggledState = !data.isToggledActive;
         const targetZoomFactor = newToggledState ? (data.toggleZoom / 100) : 1.0;
 
@@ -40,12 +45,9 @@ chrome.action.onClicked.addListener(() => {
                 windows.forEach((win) => {
                     win.tabs.forEach((tab) => {
                         if (tab.id && tab.url && (tab.url.startsWith('http') || tab.url.startsWith('https') || tab.url.startsWith('file'))) {
-                            // Smart Check: Only set zoom if it's different from the target.
                             chrome.tabs.getZoom(tab.id, (currentZoomFactor) => {
                                 if (Math.abs(currentZoomFactor - targetZoomFactor) > 0.01) {
-                                    chrome.tabs.setZoom(tab.id, targetZoomFactor).catch(err => {
-                                        console.error(`Could not set zoom for tab ${tab.id}: ${err.message}`);
-                                    });
+                                    chrome.tabs.setZoom(tab.id, targetZoomFactor).catch(() => {});
                                 }
                             });
                         }
@@ -79,10 +81,6 @@ chrome.windows.onRemoved.addListener((windowId) => {
 
 
 // --- Core Functions ---
-
-/**
- * Checks storage and sets the extension's primary action (popup or toggle).
- */
 function updateActionBehavior() {
   chrome.storage.sync.get('toggleModeEnabled', (data) => {
     if (data.toggleModeEnabled) {
@@ -100,36 +98,33 @@ function updateActionBehavior() {
   });
 }
 
-/**
- * Applies the correct zoom to a new or updated tab based on the current mode.
- * @param {number} tabId The ID of the tab to apply the zoom to.
- */
 function applyZoomToFutureTab(tabId) {
-  chrome.storage.sync.get(['globalZoom', 'toggleZoom', 'toggleModeEnabled', 'isToggledActive'], (data) => {
-    let targetZoomFactor = 1.0;
+  chrome.tabs.get(tabId, (tab) => {
+    if (chrome.runtime.lastError || !tab) return;
+    chrome.windows.get(tab.windowId, (window) => {
+      if (chrome.runtime.lastError || !window) return;
+      chrome.storage.sync.get(['globalZoom', 'toggleZoom', 'toggleModeEnabled', 'isToggledActive'], (data) => {
+        let targetZoomFactor = 1.0;
+        if (data.toggleModeEnabled) {
+          if (data.isToggledActive) {
+            targetZoomFactor = data.toggleZoom / 100;
+          }
+        } else {
+          targetZoomFactor = data.globalZoom / 100;
+        }
 
-    if (data.toggleModeEnabled) {
-      if (data.isToggledActive) {
-        targetZoomFactor = data.toggleZoom / 100;
-      }
-    } else {
-      targetZoomFactor = data.globalZoom / 100;
-    }
-
-    if (targetZoomFactor) {
-        // Smart Check: Only set zoom if it's different from the target.
-        chrome.tabs.getZoom(tabId, (currentZoomFactor) => {
-            if (Math.abs(currentZoomFactor - targetZoomFactor) > 0.01) {
-                chrome.tabs.setZoom(tabId, targetZoomFactor).catch(err => console.error(err.message));
-            }
-        });
-    }
+        if (targetZoomFactor) {
+            chrome.tabs.getZoom(tabId, (currentZoomFactor) => {
+                if (Math.abs(currentZoomFactor - targetZoomFactor) > 0.01) {
+                    chrome.tabs.setZoom(tabId, targetZoomFactor).catch(() => {});
+                }
+            });
+        }
+      });
+    });
   });
 }
 
-/**
- * Opens the popup.html file, or focuses it if it's already open.
- */
 function openConfigurationPage() {
   if (configWindowId !== null) {
     chrome.windows.get(configWindowId, (foundWindow) => {
@@ -144,9 +139,6 @@ function openConfigurationPage() {
   }
 }
 
-/**
- * Creates a new configuration window and stores its ID.
- */
 function createConfigWindow() {
     chrome.windows.create({
         url: 'popup.html',
