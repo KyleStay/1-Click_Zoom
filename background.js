@@ -44,7 +44,7 @@ chrome.action.onClicked.addListener(() => {
   toggleZoom();
 });
 
-// Listen for keyboard shortcut (Ctrl+Shift+Alt+Z)
+// Listen for keyboard shortcut (Ctrl+Shift+= / Cmd+Shift+=)
 chrome.commands.onCommand.addListener((command) => {
   if (command === 'toggle-zoom') {
     toggleZoom();

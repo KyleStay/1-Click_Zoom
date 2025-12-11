@@ -27,8 +27,8 @@
   "commands": {
     "toggle-zoom": {
       "suggested_key": {
-        "default": "Ctrl+Shift+Alt+Z",
-        "mac": "Command+Shift+Alt+Z"
+        "default": "Ctrl+Shift+Plus",
+        "mac": "Command+Shift+Plus"
       },
       "description": "Toggle zoom on/off"
     }
