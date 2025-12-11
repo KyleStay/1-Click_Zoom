@@ -2,9 +2,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // --- Constants ---
   const ZOOM_MIN = 25;
   const ZOOM_MAX = 500;
-  const DEFAULT_GLOBAL_ZOOM = 100;
   const DEFAULT_TOGGLE_ZOOM = 150;
-  const ZOOM_DIFF_THRESHOLD = 0.01;
   const STATUS_DISPLAY_MS = 2500;
   const CLOSE_DELAY_MS = 300;
   const VALID_URL_PREFIXES = ['http', 'file'];
@@ -24,8 +22,9 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // --- Get DOM Elements ---
+  const zoomToggleCheckbox = document.getElementById('zoomToggleCheckbox');
+  const zoomStateText = document.getElementById('zoom-state-text');
   const toggleModeCheckbox = document.getElementById('toggleModeCheckbox');
-  const configTitle = document.getElementById('config-title');
   const zoomLevelInput = document.getElementById('zoomLevel');
   const saveButton = document.getElementById('saveButton');
   const statusDiv = document.getElementById('status');
@@ -41,9 +40,11 @@ document.addEventListener('DOMContentLoaded', function() {
   let currentHostname = null;
 
   // --- Load Initial State ---
-  chrome.storage.sync.get(['globalZoom', 'toggleZoom', 'toggleModeEnabled', 'siteSettings'], (data) => {
+  chrome.storage.sync.get(['toggleZoom', 'toggleModeEnabled', 'isToggledActive', 'siteSettings'], (data) => {
     toggleModeCheckbox.checked = data.toggleModeEnabled || false;
-    updateUI(data.toggleModeEnabled, data);
+    zoomToggleCheckbox.checked = data.isToggledActive || false;
+    zoomLevelInput.value = data.toggleZoom || DEFAULT_TOGGLE_ZOOM;
+    updateZoomStateText(data.isToggledActive);
     loadCurrentSite(data);
   });
 
@@ -51,16 +52,19 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // --- Event Listeners ---
 
+  // Zoom toggle (enable/disable zoom)
+  zoomToggleCheckbox.addEventListener('change', function() {
+    chrome.runtime.sendMessage({ type: "TOGGLE_ZOOM" });
+    updateZoomStateText(this.checked);
+    showStatus(this.checked ? 'Zoom enabled!' : 'Zoom disabled!', 'green');
+  });
+
+  // 1-Click Mode toggle (icon behavior)
   toggleModeCheckbox.addEventListener('change', function() {
     const isEnabled = this.checked;
     chrome.storage.sync.set({ toggleModeEnabled: isEnabled }, () => {
-      chrome.storage.sync.get(['globalZoom', 'toggleZoom'], (data) => {
-        updateUI(isEnabled, data);
-        chrome.runtime.sendMessage({ type: "SETTINGS_CHANGED" });
-        showStatus('Mode updated!', 'green');
-
-        applyGlobalZoomToAllTabs(DEFAULT_GLOBAL_ZOOM, false);
-      });
+      chrome.runtime.sendMessage({ type: "SETTINGS_CHANGED" });
+      showStatus('Mode updated!', 'green');
     });
   });
 
@@ -92,49 +96,36 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
 
-    const isToggleMode = toggleModeCheckbox.checked;
-    const keyToSave = isToggleMode ? 'toggleZoom' : 'globalZoom';
-
-    chrome.storage.sync.set({ [keyToSave]: zoomLevel }, () => {
+    chrome.storage.sync.set({ toggleZoom: zoomLevel }, () => {
       if (chrome.runtime.lastError) {
         showStatus('Failed to save settings.', 'red');
         return;
       }
 
-      if (!isToggleMode) {
-        applyGlobalZoomToAllTabs(zoomLevel, shouldClose);
+      // If zoom is currently enabled, apply the new level to all tabs
+      if (zoomToggleCheckbox.checked) {
+        chrome.runtime.sendMessage({
+          type: "APPLY_ZOOM_TO_ALL_TABS",
+          zoomLevel: zoomLevel
+        });
+        showStatus(`Zoom set to ${zoomLevel}% on all tabs.`, 'green');
       } else {
         showStatus('Settings saved!', 'green');
-        if (shouldClose) {
-          setTimeout(() => window.close(), CLOSE_DELAY_MS);
-        }
+      }
+
+      if (shouldClose) {
+        setTimeout(() => window.close(), CLOSE_DELAY_MS);
       }
     });
   }
 
   // --- Helper Functions ---
 
-  function applyGlobalZoomToAllTabs(zoomLevel, shouldClose) {
-    // Send message to background.js to apply zoom (so it's tracked and won't trigger manual zoom save)
-    chrome.runtime.sendMessage({
-      type: "APPLY_ZOOM_TO_ALL_TABS",
-      zoomLevel: zoomLevel
-    });
-
-    showStatus(`Zoom set to ${zoomLevel}% on all tabs.`, 'green');
-
-    if (shouldClose) {
-      setTimeout(() => window.close(), CLOSE_DELAY_MS);
-    }
-  }
-
-  function updateUI(isEnabled, data) {
-    if (isEnabled) {
-      configTitle.textContent = 'Set 1-Click Zoom Level';
-      zoomLevelInput.value = data.toggleZoom || DEFAULT_TOGGLE_ZOOM;
-    } else {
-      configTitle.textContent = 'Set Global Zoom Level';
-      zoomLevelInput.value = data.globalZoom || DEFAULT_GLOBAL_ZOOM;
+  function updateZoomStateText(isActive) {
+    if (zoomStateText) {
+      zoomStateText.textContent = isActive
+        ? 'Zoom is enabled. Pages are zoomed to your set level.'
+        : 'Zoom is disabled. Pages are at their base zoom (100%).';
     }
   }
 
@@ -181,7 +172,7 @@ document.addEventListener('DOMContentLoaded', function() {
       // Check if site has custom zoom
       const siteSettings = data.siteSettings || {};
       const siteConfig = siteSettings[currentHostname];
-      const hasCustomZoom = siteConfig && (siteConfig.globalZoom || siteConfig.toggleZoom);
+      const hasCustomZoom = siteConfig && (siteConfig.toggleZoom || siteConfig.baseZoom);
 
       if (hasCustomZoom) {
         if (siteIndicator) siteIndicator.classList.add('has-custom');
@@ -189,8 +180,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Show what's customized
         const customParts = [];
-        if (siteConfig.globalZoom) customParts.push(`Global: ${siteConfig.globalZoom}%`);
-        if (siteConfig.toggleZoom) customParts.push(`Toggle: ${siteConfig.toggleZoom}%`);
+        if (siteConfig.toggleZoom) customParts.push(`Zoom: ${siteConfig.toggleZoom}%`);
+        if (siteConfig.baseZoom) customParts.push(`Base: ${siteConfig.baseZoom}%`);
         if (siteHostname) siteHostname.title = `Custom: ${customParts.join(', ')}`;
       } else {
         if (siteIndicator) siteIndicator.classList.remove('has-custom');
@@ -220,17 +211,15 @@ document.addEventListener('DOMContentLoaded', function() {
             if (siteHostname) siteHostname.title = 'Using default zoom';
 
             // Re-apply default zoom to current tab
-            chrome.storage.sync.get(['globalZoom', 'toggleZoom', 'toggleModeEnabled', 'isToggledActive'], (settings) => {
+            chrome.storage.sync.get(['toggleZoom', 'isToggledActive'], (settings) => {
               chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
                 const tab = tabs[0];
                 if (tab?.id) {
                   let targetZoom;
-                  if (settings.toggleModeEnabled && settings.isToggledActive) {
+                  if (settings.isToggledActive) {
                     targetZoom = (settings.toggleZoom || DEFAULT_TOGGLE_ZOOM) / 100;
-                  } else if (!settings.toggleModeEnabled) {
-                    targetZoom = (settings.globalZoom || DEFAULT_GLOBAL_ZOOM) / 100;
                   } else {
-                    targetZoom = 1.0;
+                    targetZoom = 1.0; // Base zoom default is 100%
                   }
                   chrome.tabs.setZoom(tab.id, targetZoom);
                 }

@@ -11,7 +11,6 @@ document.addEventListener('DOMContentLoaded', function() {
   const clearAllBtn = document.getElementById('clear-all-btn');
   const siteCountEl = document.getElementById('site-count');
   const statusEl = document.getElementById('status');
-  const defaultGlobalEl = document.getElementById('default-global');
   const defaultToggleEl = document.getElementById('default-toggle');
 
   // Debounce timers for input changes
@@ -21,20 +20,18 @@ document.addEventListener('DOMContentLoaded', function() {
   loadSites();
 
   function loadSites() {
-    chrome.storage.sync.get(['globalZoom', 'toggleZoom', 'siteSettings'], (data) => {
-      const globalZoom = data.globalZoom || 100;
+    chrome.storage.sync.get(['toggleZoom', 'siteSettings'], (data) => {
       const toggleZoom = data.toggleZoom || 150;
       const siteSettings = data.siteSettings || {};
 
       // Update defaults display
-      if (defaultGlobalEl) defaultGlobalEl.textContent = globalZoom;
       if (defaultToggleEl) defaultToggleEl.textContent = toggleZoom;
 
-      renderSites(siteSettings, globalZoom, toggleZoom);
+      renderSites(siteSettings, toggleZoom);
     });
   }
 
-  function renderSites(siteSettings, defaultGlobal, defaultToggle) {
+  function renderSites(siteSettings, defaultToggle) {
     const sites = Object.keys(siteSettings).sort();
     const count = sites.length;
 
@@ -60,13 +57,13 @@ document.addEventListener('DOMContentLoaded', function() {
       // Render each site
       sites.forEach(hostname => {
         const config = siteSettings[hostname];
-        const card = createSiteCard(hostname, config, defaultGlobal, defaultToggle);
+        const card = createSiteCard(hostname, config, defaultToggle);
         siteListEl.appendChild(card);
       });
     }
   }
 
-  function createSiteCard(hostname, config, defaultGlobal, defaultToggle) {
+  function createSiteCard(hostname, config, defaultToggle) {
     const card = document.createElement('div');
     card.className = 'site-card';
     card.dataset.hostname = hostname;
@@ -80,18 +77,7 @@ document.addEventListener('DOMContentLoaded', function() {
       </div>
       <div class="zoom-inputs">
         <div class="zoom-field">
-          <label>Global Zoom</label>
-          <div class="zoom-input-wrapper">
-            <input type="number" class="zoom-input global-zoom"
-                   min="${ZOOM_MIN}" max="${ZOOM_MAX}"
-                   placeholder="${defaultGlobal}"
-                   value="${config.globalZoom || ''}">
-            <span class="zoom-suffix">%</span>
-            <button class="clear-field-btn" data-field="globalZoom" title="Clear (use default)">&times;</button>
-          </div>
-        </div>
-        <div class="zoom-field">
-          <label>Toggle Zoom</label>
+          <label>Zoom Level</label>
           <div class="zoom-input-wrapper">
             <input type="number" class="zoom-input toggle-zoom"
                    min="${ZOOM_MIN}" max="${ZOOM_MAX}"
@@ -121,13 +107,8 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Input change handlers with debounce
-    const globalInput = card.querySelector('.global-zoom');
     const toggleInput = card.querySelector('.toggle-zoom');
     const baseInput = card.querySelector('.base-zoom');
-
-    globalInput.addEventListener('input', () => {
-      debouncedSave(hostname, 'globalZoom', globalInput.value);
-    });
 
     toggleInput.addEventListener('input', () => {
       debouncedSave(hostname, 'toggleZoom', toggleInput.value);
@@ -141,10 +122,7 @@ document.addEventListener('DOMContentLoaded', function() {
     card.querySelectorAll('.clear-field-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const field = btn.dataset.field;
-        let input;
-        if (field === 'globalZoom') input = globalInput;
-        else if (field === 'toggleZoom') input = toggleInput;
-        else input = baseInput;
+        const input = field === 'toggleZoom' ? toggleInput : baseInput;
         input.value = '';
         debouncedSave(hostname, field, '');
       });
@@ -163,9 +141,8 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   function saveSiteField(hostname, field, value) {
-    chrome.storage.sync.get(['globalZoom', 'toggleZoom', 'siteSettings'], (data) => {
+    chrome.storage.sync.get(['toggleZoom', 'siteSettings'], (data) => {
       const siteSettings = data.siteSettings || {};
-      const defaultGlobal = data.globalZoom || 100;
       const defaultToggle = data.toggleZoom || 150;
       const defaultBase = 100; // Base zoom default is always 100%
 
@@ -183,10 +160,7 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
       } else {
         // Check if it matches the default
-        let defaultValue;
-        if (field === 'globalZoom') defaultValue = defaultGlobal;
-        else if (field === 'toggleZoom') defaultValue = defaultToggle;
-        else defaultValue = defaultBase;
+        const defaultValue = field === 'toggleZoom' ? defaultToggle : defaultBase;
 
         if (parsedValue === defaultValue) {
           // Remove since it matches default

@@ -163,24 +163,21 @@
   </div>
   <div id="status"></div>
 
-  <!-- 1-Click Mode Section -->
+  <!-- Zoom Toggle Section -->
   <div class="section" style="margin-top:0; border-top:none; padding-top:0;">
     <div class="toggle-switch">
-      <span class="section-title" style="margin-bottom:0;">1-Click Mode</span>
+      <span class="section-title" style="margin-bottom:0;">Zoom</span>
       <label class="switch">
-        <input type="checkbox" id="toggleModeCheckbox">
+        <input type="checkbox" id="zoomToggleCheckbox">
         <span class="slider"></span>
       </label>
     </div>
-    <ul class="info-list">
-        <li><b>Left-click icon:</b> Toggles the zoom.</li>
-        <li><b>Right-click icon:</b> Opens these settings.</li>
-    </ul>
+    <p id="zoom-state-text" style="font-size: 11px; color: #57606a; margin: 8px 0 0 0; text-align: left;"></p>
   </div>
 
-  <!-- Configuration Section -->
+  <!-- Zoom Level Configuration Section -->
   <div id="config-section" class="section">
-    <h4 id="config-title" class="section-title"></h4>
+    <h4 class="section-title">Zoom Level</h4>
     <input type="number" id="zoomLevel" class="zoom-input" min="25" max="500">
     <div class="presets">
       <div class="preset-row">
@@ -200,6 +197,21 @@
         <button class="preset-btn" data-zoom="50">50%</button>
       </div>
     </div>
+  </div>
+
+  <!-- 1-Click Mode Section -->
+  <div class="section">
+    <div class="toggle-switch">
+      <span class="section-title" style="margin-bottom:0;">1-Click Mode</span>
+      <label class="switch">
+        <input type="checkbox" id="toggleModeCheckbox">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <ul class="info-list">
+        <li><b>Left-click icon:</b> Toggles the zoom.</li>
+        <li><b>Right-click icon:</b> Opens these settings.</li>
+    </ul>
   </div>
 
   <!-- Site-specific section -->

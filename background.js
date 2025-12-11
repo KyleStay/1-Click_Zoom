@@ -27,21 +27,16 @@ function getHostname(url) {
   }
 }
 
-// Helper to get effective zoom for a site based on current mode
+// Helper to get effective zoom for a site based on current state
 function getEffectiveZoom(hostname, data) {
   const siteConfig = data.siteSettings?.[hostname];
 
-  if (data.toggleModeEnabled) {
-    if (data.isToggledActive) {
-      // 1-Click Mode ON and toggled: use site toggle zoom or default
-      return (siteConfig?.toggleZoom ?? data.toggleZoom) / 100;
-    }
-    // 1-Click Mode ON but not toggled: use site base zoom or 100%
-    return (siteConfig?.baseZoom ?? 100) / 100;
-  } else {
-    // Global Mode: use site global zoom or default
-    return (siteConfig?.globalZoom ?? data.globalZoom) / 100;
+  if (data.isToggledActive) {
+    // Zoom enabled: use site toggle zoom or default
+    return (siteConfig?.toggleZoom ?? data.toggleZoom) / 100;
   }
+  // Zoom disabled: use site base zoom or 100%
+  return (siteConfig?.baseZoom ?? 100) / 100;
 }
 
 // Wrapper to set zoom and track that we initiated it
@@ -56,7 +51,6 @@ function setZoomTracked(tabId, zoomFactor) {
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
     chrome.storage.sync.set({
-      globalZoom: 100,
       toggleZoom: 150,
       toggleModeEnabled: false,
       isToggledActive: false,
@@ -86,6 +80,8 @@ chrome.runtime.onMessage.addListener((message) => {
     updateActionBehavior();
   } else if (message.type === "APPLY_ZOOM_TO_ALL_TABS") {
     applyZoomToAllTabs(message.zoomLevel);
+  } else if (message.type === "TOGGLE_ZOOM") {
+    toggleZoom();
   }
 });
 
@@ -188,9 +184,8 @@ function saveSiteZoom(tabId, zoomFactor) {
 
     const zoomPercent = Math.round(zoomFactor * 100);
 
-    chrome.storage.sync.get(['globalZoom', 'toggleZoom', 'toggleModeEnabled', 'isToggledActive', 'siteSettings'], (data) => {
+    chrome.storage.sync.get(['toggleZoom', 'isToggledActive', 'siteSettings'], (data) => {
       const siteSettings = data.siteSettings || {};
-      const defaultGlobalZoom = data.globalZoom || 100;
       const defaultToggleZoom = data.toggleZoom || 150;
 
       // Check site limit before adding new site
@@ -204,10 +199,10 @@ function saveSiteZoom(tabId, zoomFactor) {
         siteSettings[hostname] = {};
       }
 
-      // Determine which zoom to save based on current mode
+      // Determine which zoom to save based on current state
       let zoomSaved = false;
-      if (data.toggleModeEnabled && data.isToggledActive) {
-        // 1-Click Mode ON and toggled: save toggle zoom
+      if (data.isToggledActive) {
+        // Zoom enabled: save toggle zoom
         if (zoomPercent === defaultToggleZoom) {
           // Matches default, remove override
           delete siteSettings[hostname].toggleZoom;
@@ -215,22 +210,13 @@ function saveSiteZoom(tabId, zoomFactor) {
           siteSettings[hostname].toggleZoom = zoomPercent;
           zoomSaved = true;
         }
-      } else if (data.toggleModeEnabled && !data.isToggledActive) {
-        // 1-Click Mode ON but not toggled: save base zoom (unzoomed state)
+      } else {
+        // Zoom disabled: save base zoom (unzoomed state)
         if (zoomPercent === 100) {
           // Matches default (100%), remove override
           delete siteSettings[hostname].baseZoom;
         } else {
           siteSettings[hostname].baseZoom = zoomPercent;
-          zoomSaved = true;
-        }
-      } else if (!data.toggleModeEnabled) {
-        // Global Mode: save global zoom
-        if (zoomPercent === defaultGlobalZoom) {
-          // Matches default, remove override
-          delete siteSettings[hostname].globalZoom;
-        } else {
-          siteSettings[hostname].globalZoom = zoomPercent;
           zoomSaved = true;
         }
       }
@@ -301,6 +287,7 @@ function toggleZoom() {
 function updateActionBehavior() {
   chrome.storage.sync.get('toggleModeEnabled', (data) => {
     if (data.toggleModeEnabled) {
+      // 1-Click Mode: icon click toggles zoom directly
       chrome.action.setPopup({ popup: '' });
       // Remove existing menu first to avoid duplicate ID error, then create
       chrome.contextMenus.removeAll(() => {
@@ -324,9 +311,10 @@ function updateActionBehavior() {
         });
       });
     } else {
+      // Default Mode: icon click opens popup
       chrome.action.setPopup({ popup: 'popup.html' });
       chrome.contextMenus.removeAll();
-      chrome.storage.sync.set({ isToggledActive: false });
+      // Don't reset isToggledActive - preserve zoom state when switching modes
     }
   });
 }
@@ -336,7 +324,7 @@ function applyZoomToFutureTab(tabId) {
     if (chrome.runtime.lastError || !tab) return;
     chrome.windows.get(tab.windowId, (window) => {
       if (chrome.runtime.lastError || !window) return;
-      chrome.storage.sync.get(['globalZoom', 'toggleZoom', 'toggleModeEnabled', 'isToggledActive', 'siteSettings'], (data) => {
+      chrome.storage.sync.get(['toggleZoom', 'isToggledActive', 'siteSettings'], (data) => {
         const hostname = getHostname(tab.url);
         const targetZoomFactor = getEffectiveZoom(hostname, data);
 
