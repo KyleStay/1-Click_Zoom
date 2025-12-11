@@ -139,16 +139,20 @@
       background: #f3f4f6;
       border-color: #8b949e;
     }
-    #manageSitesLink {
-      display: block;
+    .manage-sites-btn {
       margin-top: 8px;
-      font-size: 11px;
-      color: #0969da;
-      text-decoration: none;
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      background-color: #f6f8fa;
+      color: #1f2328;
+      font-size: 13px;
       cursor: pointer;
     }
-    #manageSitesLink:hover {
-      text-decoration: underline;
+    .manage-sites-btn:hover {
+      background-color: #f3f4f6;
+      border-color: #8b949e;
     }
   </style>
 </head>
@@ -204,10 +208,10 @@
       <span><span id="site-hostname" class="site-hostname"></span></span>
       <button id="resetSiteBtn" style="display: none;">Reset to default</button>
     </div>
-    <a id="manageSitesLink">Manage all sites →</a>
   </div>
 
   <button id="saveButton">Save</button>
+  <button id="manageSitesBtn" class="manage-sites-btn">Manage Sites</button>
   <div id="version-info"></div>
 
   <script src="popup.js"></script>

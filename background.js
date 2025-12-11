@@ -84,8 +84,34 @@ chrome.runtime.onStartup.addListener(() => {
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "SETTINGS_CHANGED") {
     updateActionBehavior();
+  } else if (message.type === "APPLY_ZOOM_TO_ALL_TABS") {
+    applyZoomToAllTabs(message.zoomLevel);
   }
 });
+
+// Apply zoom to all tabs (called from popup, uses tracked zoom to avoid triggering onZoomChange save)
+function applyZoomToAllTabs(zoomLevel) {
+  const targetZoomFactor = zoomLevel / 100;
+
+  chrome.windows.getAll({ populate: true, windowTypes: ['normal', 'app'] }, (windows) => {
+    windows.forEach((win) => {
+      win.tabs.forEach((tab) => {
+        if (tab.id && isZoomableUrl(tab.url)) {
+          chrome.tabs.getZoom(tab.id, (currentZoomFactor) => {
+            if (chrome.runtime.lastError) return;
+            if (Math.abs(currentZoomFactor - targetZoomFactor) > ZOOM_DIFF_THRESHOLD) {
+              setZoomTracked(tab.id, targetZoomFactor).catch((err) => {
+                if (!err.message?.includes('Cannot access')) {
+                  console.warn('Zoom error:', err.message);
+                }
+              });
+            }
+          });
+        }
+      });
+    });
+  });
+}
 
 // Listen for a left-click on the extension icon. This is only active in 1-Click Mode.
 chrome.action.onClicked.addListener(() => {
