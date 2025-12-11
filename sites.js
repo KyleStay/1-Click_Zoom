@@ -101,6 +101,17 @@ document.addEventListener('DOMContentLoaded', function() {
             <button class="clear-field-btn" data-field="toggleZoom" title="Clear (use default)">&times;</button>
           </div>
         </div>
+        <div class="zoom-field">
+          <label>Base Zoom</label>
+          <div class="zoom-input-wrapper">
+            <input type="number" class="zoom-input base-zoom"
+                   min="${ZOOM_MIN}" max="${ZOOM_MAX}"
+                   placeholder="100"
+                   value="${config.baseZoom || ''}">
+            <span class="zoom-suffix">%</span>
+            <button class="clear-field-btn" data-field="baseZoom" title="Clear (use default)">&times;</button>
+          </div>
+        </div>
       </div>
     `;
 
@@ -112,6 +123,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Input change handlers with debounce
     const globalInput = card.querySelector('.global-zoom');
     const toggleInput = card.querySelector('.toggle-zoom');
+    const baseInput = card.querySelector('.base-zoom');
 
     globalInput.addEventListener('input', () => {
       debouncedSave(hostname, 'globalZoom', globalInput.value);
@@ -121,11 +133,18 @@ document.addEventListener('DOMContentLoaded', function() {
       debouncedSave(hostname, 'toggleZoom', toggleInput.value);
     });
 
+    baseInput.addEventListener('input', () => {
+      debouncedSave(hostname, 'baseZoom', baseInput.value);
+    });
+
     // Clear field buttons
     card.querySelectorAll('.clear-field-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const field = btn.dataset.field;
-        const input = field === 'globalZoom' ? globalInput : toggleInput;
+        let input;
+        if (field === 'globalZoom') input = globalInput;
+        else if (field === 'toggleZoom') input = toggleInput;
+        else input = baseInput;
         input.value = '';
         debouncedSave(hostname, field, '');
       });
@@ -148,6 +167,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const siteSettings = data.siteSettings || {};
       const defaultGlobal = data.globalZoom || 100;
       const defaultToggle = data.toggleZoom || 150;
+      const defaultBase = 100; // Base zoom default is always 100%
 
       if (!siteSettings[hostname]) {
         siteSettings[hostname] = {};
@@ -163,7 +183,11 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
       } else {
         // Check if it matches the default
-        const defaultValue = field === 'globalZoom' ? defaultGlobal : defaultToggle;
+        let defaultValue;
+        if (field === 'globalZoom') defaultValue = defaultGlobal;
+        else if (field === 'toggleZoom') defaultValue = defaultToggle;
+        else defaultValue = defaultBase;
+
         if (parsedValue === defaultValue) {
           // Remove since it matches default
           delete siteSettings[hostname][field];

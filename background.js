@@ -36,8 +36,8 @@ function getEffectiveZoom(hostname, data) {
       // 1-Click Mode ON and toggled: use site toggle zoom or default
       return (siteConfig?.toggleZoom ?? data.toggleZoom) / 100;
     }
-    // 1-Click Mode ON but not toggled: always 100%
-    return 1.0;
+    // 1-Click Mode ON but not toggled: use site base zoom or 100%
+    return (siteConfig?.baseZoom ?? 100) / 100;
   } else {
     // Global Mode: use site global zoom or default
     return (siteConfig?.globalZoom ?? data.globalZoom) / 100;
@@ -215,6 +215,15 @@ function saveSiteZoom(tabId, zoomFactor) {
           siteSettings[hostname].toggleZoom = zoomPercent;
           zoomSaved = true;
         }
+      } else if (data.toggleModeEnabled && !data.isToggledActive) {
+        // 1-Click Mode ON but not toggled: save base zoom (unzoomed state)
+        if (zoomPercent === 100) {
+          // Matches default (100%), remove override
+          delete siteSettings[hostname].baseZoom;
+        } else {
+          siteSettings[hostname].baseZoom = zoomPercent;
+          zoomSaved = true;
+        }
       } else if (!data.toggleModeEnabled) {
         // Global Mode: save global zoom
         if (zoomPercent === defaultGlobalZoom) {
@@ -225,7 +234,6 @@ function saveSiteZoom(tabId, zoomFactor) {
           zoomSaved = true;
         }
       }
-      // Don't save when toggle mode is ON but not active (100% state is not persisted)
 
       // Clean up empty site entries
       if (Object.keys(siteSettings[hostname]).length === 0) {
@@ -265,9 +273,11 @@ function toggleZoom() {
             if (tab.id && isZoomableUrl(tab.url)) {
               const hostname = getHostname(tab.url);
               const siteConfig = hostname ? siteSettings[hostname] : null;
-              // Use site-specific toggle zoom or default
+              // Use site-specific toggle zoom or default for zoomed state
               const siteToggleZoom = siteConfig?.toggleZoom ?? data.toggleZoom;
-              const targetZoomFactor = newToggledState ? (siteToggleZoom / 100) : 1.0;
+              // Use site-specific base zoom or 100% for unzoomed state
+              const siteBaseZoom = siteConfig?.baseZoom ?? 100;
+              const targetZoomFactor = newToggledState ? (siteToggleZoom / 100) : (siteBaseZoom / 100);
 
               chrome.tabs.getZoom(tab.id, (currentZoomFactor) => {
                 if (chrome.runtime.lastError) return;
