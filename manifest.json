@@ -23,5 +23,14 @@
     "16": "images/icon16.png",
     "48": "images/icon48.png",
     "128": "images/icon128.png"
+  },
+  "commands": {
+    "toggle-zoom": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Alt+Z",
+        "mac": "Command+Shift+Alt+Z"
+      },
+      "description": "Toggle zoom on/off"
+    }
   }
 }

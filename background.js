@@ -41,33 +41,14 @@ chrome.runtime.onMessage.addListener((message) => {
 
 // Listen for a left-click on the extension icon. This is only active in 1-Click Mode.
 chrome.action.onClicked.addListener(() => {
-  chrome.storage.sync.get(['toggleZoom', 'isToggledActive'], (data) => {
-    if (!data.toggleZoom) return;
-    const newToggledState = !data.isToggledActive;
-    const targetZoomFactor = newToggledState ? (data.toggleZoom / 100) : 1.0;
+  toggleZoom();
+});
 
-    chrome.storage.sync.set({ isToggledActive: newToggledState }, () => {
-      chrome.windows.getAll({ populate: true, windowTypes: ['normal', 'app'] }, (windows) => {
-        windows.forEach((win) => {
-          win.tabs.forEach((tab) => {
-            if (tab.id && isZoomableUrl(tab.url)) {
-              chrome.tabs.getZoom(tab.id, (currentZoomFactor) => {
-                if (chrome.runtime.lastError) return;
-                if (Math.abs(currentZoomFactor - targetZoomFactor) > ZOOM_DIFF_THRESHOLD) {
-                  chrome.tabs.setZoom(tab.id, targetZoomFactor).catch((err) => {
-                    // Expected for chrome:// or restricted pages
-                    if (!err.message?.includes('Cannot access')) {
-                      console.warn('Zoom error:', err.message);
-                    }
-                  });
-                }
-              });
-            }
-          });
-        });
-      });
-    });
-  });
+// Listen for keyboard shortcut (Ctrl+Shift+Alt+Z)
+chrome.commands.onCommand.addListener((command) => {
+  if (command === 'toggle-zoom') {
+    toggleZoom();
+  }
 });
 
 // Listen for tab updates to apply the correct zoom to future tabs in either mode.
@@ -95,6 +76,38 @@ chrome.windows.onRemoved.addListener((windowId) => {
 
 
 // --- Core Functions ---
+
+// Toggle zoom on/off for all tabs (used by icon click and keyboard shortcut)
+function toggleZoom() {
+  chrome.storage.sync.get(['toggleZoom', 'isToggledActive'], (data) => {
+    if (!data.toggleZoom) return;
+    const newToggledState = !data.isToggledActive;
+    const targetZoomFactor = newToggledState ? (data.toggleZoom / 100) : 1.0;
+
+    chrome.storage.sync.set({ isToggledActive: newToggledState }, () => {
+      chrome.windows.getAll({ populate: true, windowTypes: ['normal', 'app'] }, (windows) => {
+        windows.forEach((win) => {
+          win.tabs.forEach((tab) => {
+            if (tab.id && isZoomableUrl(tab.url)) {
+              chrome.tabs.getZoom(tab.id, (currentZoomFactor) => {
+                if (chrome.runtime.lastError) return;
+                if (Math.abs(currentZoomFactor - targetZoomFactor) > ZOOM_DIFF_THRESHOLD) {
+                  chrome.tabs.setZoom(tab.id, targetZoomFactor).catch((err) => {
+                    // Expected for chrome:// or restricted pages
+                    if (!err.message?.includes('Cannot access')) {
+                      console.warn('Zoom error:', err.message);
+                    }
+                  });
+                }
+              });
+            }
+          });
+        });
+      });
+    });
+  });
+}
+
 function updateActionBehavior() {
   chrome.storage.sync.get('toggleModeEnabled', (data) => {
     if (data.toggleModeEnabled) {
