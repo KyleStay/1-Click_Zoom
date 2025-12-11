@@ -14,6 +14,15 @@ document.addEventListener('DOMContentLoaded', function() {
     return url && VALID_URL_PREFIXES.some(prefix => url.startsWith(prefix));
   }
 
+  // Helper to extract hostname from URL
+  function getHostname(url) {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return null;
+    }
+  }
+
   // --- Get DOM Elements ---
   const toggleModeCheckbox = document.getElementById('toggleModeCheckbox');
   const configTitle = document.getElementById('config-title');
@@ -22,11 +31,20 @@ document.addEventListener('DOMContentLoaded', function() {
   const statusDiv = document.getElementById('status');
   const presetButtons = document.querySelectorAll('.preset-btn');
   const versionInfoDiv = document.getElementById('version-info');
+  const siteSection = document.getElementById('site-section');
+  const siteIndicator = document.getElementById('site-indicator');
+  const siteHostname = document.getElementById('site-hostname');
+  const resetSiteBtn = document.getElementById('resetSiteBtn');
+  const manageSitesBtn = document.getElementById('manageSitesBtn');
+
+  // Current tab state
+  let currentHostname = null;
 
   // --- Load Initial State ---
-  chrome.storage.sync.get(['globalZoom', 'toggleZoom', 'toggleModeEnabled'], (data) => {
+  chrome.storage.sync.get(['globalZoom', 'toggleZoom', 'toggleModeEnabled', 'siteSettings'], (data) => {
     toggleModeCheckbox.checked = data.toggleModeEnabled || false;
     updateUI(data.toggleModeEnabled, data);
+    loadCurrentSite(data);
   });
 
   displayVersion();
@@ -97,27 +115,10 @@ document.addEventListener('DOMContentLoaded', function() {
   // --- Helper Functions ---
 
   function applyGlobalZoomToAllTabs(zoomLevel, shouldClose) {
-    const targetZoomFactor = zoomLevel / 100;
-
-    chrome.windows.getAll({ populate: true, windowTypes: ['normal', 'app'] }, (windows) => {
-      windows.forEach((win) => {
-        win.tabs.forEach((tab) => {
-          if (isZoomableUrl(tab.url)) {
-            // Smart Check: Only set zoom if it's different from the target.
-            chrome.tabs.getZoom(tab.id, (currentZoomFactor) => {
-              if (chrome.runtime.lastError) return;
-              if (Math.abs(currentZoomFactor - targetZoomFactor) > ZOOM_DIFF_THRESHOLD) {
-                chrome.tabs.setZoom(tab.id, targetZoomFactor).catch((err) => {
-                  // Expected for chrome:// or restricted pages
-                  if (!err.message?.includes('Cannot access')) {
-                    console.warn('Zoom error:', err.message);
-                  }
-                });
-              }
-            });
-          }
-        });
-      });
+    // Send message to background.js to apply zoom (so it's tracked and won't trigger manual zoom save)
+    chrome.runtime.sendMessage({
+      type: "APPLY_ZOOM_TO_ALL_TABS",
+      zoomLevel: zoomLevel
     });
 
     showStatus(`Zoom set to ${zoomLevel}% on all tabs.`, 'green');
@@ -154,5 +155,97 @@ document.addEventListener('DOMContentLoaded', function() {
         }
       }, STATUS_DISPLAY_MS);
     }
+  }
+
+  // --- Site-specific Functions ---
+
+  function loadCurrentSite(data) {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs[0];
+      if (!tab?.url || !isZoomableUrl(tab.url)) {
+        // Not a zoomable page, hide site section
+        if (siteSection) siteSection.style.display = 'none';
+        return;
+      }
+
+      currentHostname = getHostname(tab.url);
+      if (!currentHostname) {
+        if (siteSection) siteSection.style.display = 'none';
+        return;
+      }
+
+      // Show site section
+      if (siteSection) siteSection.style.display = 'block';
+      if (siteHostname) siteHostname.textContent = currentHostname;
+
+      // Check if site has custom zoom
+      const siteSettings = data.siteSettings || {};
+      const siteConfig = siteSettings[currentHostname];
+      const hasCustomZoom = siteConfig && (siteConfig.globalZoom || siteConfig.toggleZoom);
+
+      if (hasCustomZoom) {
+        if (siteIndicator) siteIndicator.classList.add('has-custom');
+        if (resetSiteBtn) resetSiteBtn.style.display = 'block';
+
+        // Show what's customized
+        const customParts = [];
+        if (siteConfig.globalZoom) customParts.push(`Global: ${siteConfig.globalZoom}%`);
+        if (siteConfig.toggleZoom) customParts.push(`Toggle: ${siteConfig.toggleZoom}%`);
+        if (siteHostname) siteHostname.title = `Custom: ${customParts.join(', ')}`;
+      } else {
+        if (siteIndicator) siteIndicator.classList.remove('has-custom');
+        if (resetSiteBtn) resetSiteBtn.style.display = 'none';
+        if (siteHostname) siteHostname.title = 'Using default zoom';
+      }
+    });
+  }
+
+  // Reset site button handler
+  if (resetSiteBtn) {
+    resetSiteBtn.addEventListener('click', () => {
+      if (!currentHostname) return;
+
+      chrome.storage.sync.get('siteSettings', (data) => {
+        const siteSettings = data.siteSettings || {};
+
+        if (siteSettings[currentHostname]) {
+          delete siteSettings[currentHostname];
+
+          chrome.storage.sync.set({ siteSettings }, () => {
+            showStatus('Site reset to defaults', 'green');
+
+            // Update UI
+            if (siteIndicator) siteIndicator.classList.remove('has-custom');
+            if (resetSiteBtn) resetSiteBtn.style.display = 'none';
+            if (siteHostname) siteHostname.title = 'Using default zoom';
+
+            // Re-apply default zoom to current tab
+            chrome.storage.sync.get(['globalZoom', 'toggleZoom', 'toggleModeEnabled', 'isToggledActive'], (settings) => {
+              chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                const tab = tabs[0];
+                if (tab?.id) {
+                  let targetZoom;
+                  if (settings.toggleModeEnabled && settings.isToggledActive) {
+                    targetZoom = (settings.toggleZoom || DEFAULT_TOGGLE_ZOOM) / 100;
+                  } else if (!settings.toggleModeEnabled) {
+                    targetZoom = (settings.globalZoom || DEFAULT_GLOBAL_ZOOM) / 100;
+                  } else {
+                    targetZoom = 1.0;
+                  }
+                  chrome.tabs.setZoom(tab.id, targetZoom);
+                }
+              });
+            });
+          });
+        }
+      });
+    });
+  }
+
+  // Manage sites button handler
+  if (manageSitesBtn) {
+    manageSitesBtn.addEventListener('click', () => {
+      chrome.tabs.create({ url: 'sites.html' });
+    });
   }
 });
