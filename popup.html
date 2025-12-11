@@ -5,7 +5,8 @@
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      width: 240px;
+      width: 280px;
+      min-height: 572px;
       padding: 16px 16px 0px;
       text-align: center;
       background-color: #f7f8fa;
@@ -101,6 +102,104 @@
 
     #saveButton { margin-top: 16px; width: 100%; padding: 10px; border: none; border-radius: 6px; background-color: #0969da; color: white; font-size: 14px; font-weight: 500; cursor: pointer; }
     #version-info { font-size: 10px; color: #8b949e; margin-top: 8px; padding-bottom: 8px; }
+
+    /* Site indicator section */
+    .site-section {
+      border-top: 1px solid #d0d7de;
+      margin-top: 16px;
+      padding-top: 12px;
+      text-align: left;
+    }
+    .site-indicator {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: #57606a;
+    }
+    .site-indicator.has-custom {
+      color: #0969da;
+    }
+    .site-hostname {
+      font-weight: 500;
+      max-width: 140px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #resetSiteBtn {
+      font-size: 11px;
+      padding: 4px 8px;
+      border: 1px solid #d0d7de;
+      border-radius: 4px;
+      background: #f6f8fa;
+      cursor: pointer;
+      color: #57606a;
+    }
+    #resetSiteBtn:hover {
+      background: #f3f4f6;
+      border-color: #8b949e;
+    }
+    .manage-sites-btn {
+      margin-top: 8px;
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      background-color: #f6f8fa;
+      color: #1f2328;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .manage-sites-btn:hover {
+      background-color: #f3f4f6;
+      border-color: #8b949e;
+    }
+
+    /* Zoom Toggle Button */
+    .zoom-toggle-btn {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #d0d7de;
+      border-radius: 8px;
+      background-color: #f6f8fa;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: all 0.2s ease-in-out;
+    }
+    .zoom-toggle-btn svg {
+      width: 24px;
+      height: 24px;
+      stroke: #57606a;
+      transition: all 0.2s ease-in-out;
+    }
+    .zoom-toggle-btn .btn-text {
+      font-size: 14px;
+      font-weight: 600;
+      color: #57606a;
+      transition: all 0.2s ease-in-out;
+    }
+    .zoom-toggle-btn:hover {
+      background-color: #f3f4f6;
+      border-color: #8b949e;
+    }
+    .zoom-toggle-btn.active {
+      background-color: #2da44e;
+      border-color: #2da44e;
+    }
+    .zoom-toggle-btn.active svg {
+      stroke: white;
+    }
+    .zoom-toggle-btn.active .btn-text {
+      color: white;
+    }
+    .zoom-toggle-btn.active:hover {
+      background-color: #26903f;
+      border-color: #26903f;
+    }
   </style>
 </head>
 <body>
@@ -110,8 +209,16 @@
   </div>
   <div id="status"></div>
 
-  <!-- 1-Click Mode Section -->
+  <!-- Zoom Toggle Section -->
   <div class="section" style="margin-top:0; border-top:none; padding-top:0;">
+    <button id="zoomToggleBtn" class="zoom-toggle-btn">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+      <span class="btn-text" id="zoomToggleBtnText">Enable Zoom</span>
+    </button>
+  </div>
+
+  <!-- 1-Click Mode Section -->
+  <div class="section">
     <div class="toggle-switch">
       <span class="section-title" style="margin-bottom:0;">1-Click Mode</span>
       <label class="switch">
@@ -125,9 +232,9 @@
     </ul>
   </div>
 
-  <!-- Configuration Section -->
+  <!-- Zoom Level Configuration Section -->
   <div id="config-section" class="section">
-    <h4 id="config-title" class="section-title"></h4>
+    <h4 class="section-title">Zoom Level</h4>
     <input type="number" id="zoomLevel" class="zoom-input" min="25" max="500">
     <div class="presets">
       <div class="preset-row">
@@ -149,7 +256,16 @@
     </div>
   </div>
 
+  <!-- Site-specific section -->
+  <div id="site-section" class="site-section" style="display: none;">
+    <div id="site-indicator" class="site-indicator">
+      <span><span id="site-hostname" class="site-hostname"></span></span>
+      <button id="resetSiteBtn" style="display: none;">Reset to default</button>
+    </div>
+  </div>
+
   <button id="saveButton">Save</button>
+  <button id="manageSitesBtn" class="manage-sites-btn">Manage Sites</button>
   <div id="version-info"></div>
 
   <script src="popup.js"></script>
