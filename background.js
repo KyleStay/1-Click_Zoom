@@ -1,5 +1,6 @@
 // --- Constants and Initial Setup ---
 const CONTEXT_MENU_ID = "configureZoom";
+const CONTEXT_MENU_SITES_ID = "manageSites";
 const ZOOM_DIFF_THRESHOLD = 0.01;
 const VALID_URL_PREFIXES = ['http', 'file'];
 const MANUAL_ZOOM_DEBOUNCE_MS = 1500;
@@ -133,6 +134,8 @@ chrome.tabs.onZoomChange.addListener((zoomChangeInfo) => {
 chrome.contextMenus.onClicked.addListener((info) => {
   if (info.menuItemId === CONTEXT_MENU_ID) {
     openConfigurationPage();
+  } else if (info.menuItemId === CONTEXT_MENU_SITES_ID) {
+    chrome.tabs.create({ url: 'sites.html' });
   }
 });
 
@@ -270,7 +273,15 @@ function updateActionBehavior() {
           title: "Configure Zoom",
           contexts: ["action"]
         }, () => {
-          // Clear any potential error from create (e.g., if extension context invalidated)
+          if (chrome.runtime.lastError) {
+            console.warn('Context menu creation warning:', chrome.runtime.lastError.message);
+          }
+        });
+        chrome.contextMenus.create({
+          id: CONTEXT_MENU_SITES_ID,
+          title: "Manage Sites",
+          contexts: ["action"]
+        }, () => {
           if (chrome.runtime.lastError) {
             console.warn('Context menu creation warning:', chrome.runtime.lastError.message);
           }
