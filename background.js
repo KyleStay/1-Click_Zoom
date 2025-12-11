@@ -134,9 +134,13 @@ chrome.tabs.onZoomChange.addListener((zoomChangeInfo) => {
 
   // Ignore if we caused this zoom (within last 500ms)
   const ourZoomTime = pendingExtensionZooms.get(tabId);
-  if (ourZoomTime && Date.now() - ourZoomTime < 500) {
+  if (ourZoomTime) {
+    if (Date.now() - ourZoomTime < 500) {
+      pendingExtensionZooms.delete(tabId);
+      return;
+    }
+    // Clean up stale entry (older than 500ms)
     pendingExtensionZooms.delete(tabId);
-    return;
   }
 
   // Ignore tiny changes (floating point noise)
@@ -247,6 +251,10 @@ function saveSiteZoom(tabId, zoomFactor) {
 
 // Toggle zoom on/off for all tabs (used by icon click and keyboard shortcut)
 function toggleZoom() {
+  // Clear any pending manual zoom saves to prevent stale state being saved
+  zoomSaveTimers.forEach((timer) => clearTimeout(timer));
+  zoomSaveTimers.clear();
+
   chrome.storage.sync.get(['toggleZoom', 'isToggledActive', 'siteSettings'], (data) => {
     if (!data.toggleZoom) return;
     const newToggledState = !data.isToggledActive;

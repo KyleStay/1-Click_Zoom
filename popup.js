@@ -22,8 +22,8 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // --- Get DOM Elements ---
-  const zoomToggleCheckbox = document.getElementById('zoomToggleCheckbox');
-  const zoomStateText = document.getElementById('zoom-state-text');
+  const zoomToggleBtn = document.getElementById('zoomToggleBtn');
+  const zoomToggleBtnText = document.getElementById('zoomToggleBtnText');
   const toggleModeCheckbox = document.getElementById('toggleModeCheckbox');
   const zoomLevelInput = document.getElementById('zoomLevel');
   const saveButton = document.getElementById('saveButton');
@@ -38,13 +38,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Current tab state
   let currentHostname = null;
+  let isZoomEnabled = false;
 
   // --- Load Initial State ---
   chrome.storage.sync.get(['toggleZoom', 'toggleModeEnabled', 'isToggledActive', 'siteSettings'], (data) => {
     toggleModeCheckbox.checked = data.toggleModeEnabled || false;
-    zoomToggleCheckbox.checked = data.isToggledActive || false;
+    isZoomEnabled = data.isToggledActive || false;
     zoomLevelInput.value = data.toggleZoom || DEFAULT_TOGGLE_ZOOM;
-    updateZoomStateText(data.isToggledActive);
+    updateZoomToggleButton(isZoomEnabled);
     loadCurrentSite(data);
   });
 
@@ -52,11 +53,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // --- Event Listeners ---
 
-  // Zoom toggle (enable/disable zoom)
-  zoomToggleCheckbox.addEventListener('change', function() {
+  // Zoom toggle button (enable/disable zoom)
+  zoomToggleBtn.addEventListener('click', function() {
+    isZoomEnabled = !isZoomEnabled;
     chrome.runtime.sendMessage({ type: "TOGGLE_ZOOM" });
-    updateZoomStateText(this.checked);
-    showStatus(this.checked ? 'Zoom enabled!' : 'Zoom disabled!', 'green');
+    updateZoomToggleButton(isZoomEnabled);
+    showStatus(isZoomEnabled ? 'Zoom enabled!' : 'Zoom disabled!', 'green');
   });
 
   // 1-Click Mode toggle (icon behavior)
@@ -103,7 +105,7 @@ document.addEventListener('DOMContentLoaded', function() {
       }
 
       // If zoom is currently enabled, apply the new level to all tabs
-      if (zoomToggleCheckbox.checked) {
+      if (isZoomEnabled) {
         chrome.runtime.sendMessage({
           type: "APPLY_ZOOM_TO_ALL_TABS",
           zoomLevel: zoomLevel
@@ -121,11 +123,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // --- Helper Functions ---
 
-  function updateZoomStateText(isActive) {
-    if (zoomStateText) {
-      zoomStateText.textContent = isActive
-        ? 'Zoom is enabled. Pages are zoomed to your set level.'
-        : 'Zoom is disabled. Pages are at their base zoom (100%).';
+  function updateZoomToggleButton(isActive) {
+    if (zoomToggleBtn) {
+      if (isActive) {
+        zoomToggleBtn.classList.add('active');
+        if (zoomToggleBtnText) zoomToggleBtnText.textContent = 'Zoom Enabled';
+      } else {
+        zoomToggleBtn.classList.remove('active');
+        if (zoomToggleBtnText) zoomToggleBtnText.textContent = 'Enable Zoom';
+      }
     }
   }
 
@@ -211,12 +217,12 @@ document.addEventListener('DOMContentLoaded', function() {
             if (siteHostname) siteHostname.title = 'Using default zoom';
 
             // Re-apply default zoom to current tab
-            chrome.storage.sync.get(['toggleZoom', 'isToggledActive'], (settings) => {
+            chrome.storage.sync.get(['toggleZoom'], (settings) => {
               chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
                 const tab = tabs[0];
                 if (tab?.id) {
                   let targetZoom;
-                  if (settings.isToggledActive) {
+                  if (isZoomEnabled) {
                     targetZoom = (settings.toggleZoom || DEFAULT_TOGGLE_ZOOM) / 100;
                   } else {
                     targetZoom = 1.0; // Base zoom default is 100%
