@@ -204,7 +204,6 @@ function saveSiteZoom(tabId, zoomFactor) {
       }
 
       // Determine which zoom to save based on current state
-      let zoomSaved = false;
       if (data.isToggledActive) {
         // Zoom enabled: save toggle zoom
         if (zoomPercent === defaultToggleZoom) {
@@ -212,7 +211,6 @@ function saveSiteZoom(tabId, zoomFactor) {
           delete siteSettings[hostname].toggleZoom;
         } else {
           siteSettings[hostname].toggleZoom = zoomPercent;
-          zoomSaved = true;
         }
       } else {
         // Zoom disabled: save base zoom (unzoomed state)
@@ -221,7 +219,6 @@ function saveSiteZoom(tabId, zoomFactor) {
           delete siteSettings[hostname].baseZoom;
         } else {
           siteSettings[hostname].baseZoom = zoomPercent;
-          zoomSaved = true;
         }
       }
 
@@ -236,14 +233,12 @@ function saveSiteZoom(tabId, zoomFactor) {
           return;
         }
 
-        // Show badge notification
-        if (zoomSaved) {
-          chrome.action.setBadgeText({ text: '✓' });
-          chrome.action.setBadgeBackgroundColor({ color: '#2da44e' });
-          setTimeout(() => {
-            chrome.action.setBadgeText({ text: '' });
-          }, BADGE_DISPLAY_MS);
-        }
+        // Always show badge notification for manual zoom changes
+        chrome.action.setBadgeText({ text: '✓' });
+        chrome.action.setBadgeBackgroundColor({ color: '#2da44e' });
+        setTimeout(() => {
+          chrome.action.setBadgeText({ text: '' });
+        }, BADGE_DISPLAY_MS);
       });
     });
   });
