@@ -630,8 +630,8 @@ function logContextMenuError() {
 // Update the extension icon badge to show zoom state
 function updateZoomStateBadge(isActive) {
   if (isActive) {
-    chrome.action.setBadgeText({ text: '+' });
-    chrome.action.setBadgeBackgroundColor({ color: '#2da44e' });
+    chrome.action.setBadgeText({ text: 'ON' });
+    chrome.action.setBadgeBackgroundColor({ color: '#0969da' });
   } else {
     chrome.action.setBadgeText({ text: '' });
   }
