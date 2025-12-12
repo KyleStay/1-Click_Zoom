@@ -13,6 +13,16 @@ const VALID_URL_PREFIXES = ['http', 'file'];
 const MANUAL_ZOOM_DEBOUNCE_MS = 1500;
 const MAX_SITES = 100;
 const BADGE_DISPLAY_MS = 2000;
+const DEFAULT_TOGGLE_ZOOM = 150;
+
+// Default storage values
+const STORAGE_DEFAULTS = {
+  toggleZoom: DEFAULT_TOGGLE_ZOOM,
+  toggleModeEnabled: false,
+  isToggledActive: false,
+  siteSettings: {},
+  excludedSites: { exact: [], patterns: [] }
+};
 
 // Track extension-initiated zooms to ignore in onZoomChange
 const pendingExtensionZooms = new Map();
@@ -60,10 +70,11 @@ function isExcluded(hostname, excludedSites) {
 // Helper to get effective zoom for a site based on current state
 function getEffectiveZoom(hostname, data) {
   const siteConfig = data.siteSettings?.[hostname];
+  const toggleZoom = data.toggleZoom || DEFAULT_TOGGLE_ZOOM;
 
   if (data.isToggledActive) {
     // Zoom enabled: use site toggle zoom or default
-    return (siteConfig?.toggleZoom ?? data.toggleZoom) / 100;
+    return (siteConfig?.toggleZoom ?? toggleZoom) / 100;
   }
   // Zoom disabled: use site base zoom or 100%
   return (siteConfig?.baseZoom ?? 100) / 100;
@@ -77,34 +88,62 @@ function setZoomTracked(tabId, zoomFactor) {
 
 // --- Event Listeners ---
 
-// On installation, set default values.
-chrome.runtime.onInstalled.addListener((details) => {
-  if (details.reason === 'install') {
-    chrome.storage.sync.set({
-      toggleZoom: 150,
-      toggleModeEnabled: false,
-      isToggledActive: false,
-      siteSettings: {},
-      excludedSites: { exact: [], patterns: [] }
-    }, () => {
-      updateActionBehavior();
-    });
-  } else {
-    // On update, ensure siteSettings and excludedSites exist and behavior is correct
-    chrome.storage.sync.get(['siteSettings', 'excludedSites'], (data) => {
-      const updates = {};
-      if (!data.siteSettings) updates.siteSettings = {};
-      if (!data.excludedSites) updates.excludedSites = { exact: [], patterns: [] };
-      if (Object.keys(updates).length > 0) {
-        chrome.storage.sync.set(updates);
+// Helper to ensure all storage defaults exist (handles install, update, and recovery)
+function ensureStorageDefaults(callback) {
+  chrome.storage.sync.get(null, (data) => {
+    const updates = {};
+
+    // Check each default value and add if missing or invalid
+    if (data.toggleZoom === undefined || data.toggleZoom === null || typeof data.toggleZoom !== 'number') {
+      updates.toggleZoom = STORAGE_DEFAULTS.toggleZoom;
+    }
+    if (data.toggleModeEnabled === undefined || data.toggleModeEnabled === null) {
+      updates.toggleModeEnabled = STORAGE_DEFAULTS.toggleModeEnabled;
+    }
+    if (data.isToggledActive === undefined || data.isToggledActive === null) {
+      updates.isToggledActive = STORAGE_DEFAULTS.isToggledActive;
+    }
+    if (!data.siteSettings || typeof data.siteSettings !== 'object') {
+      updates.siteSettings = STORAGE_DEFAULTS.siteSettings;
+    }
+    if (!data.excludedSites || typeof data.excludedSites !== 'object') {
+      updates.excludedSites = STORAGE_DEFAULTS.excludedSites;
+    } else {
+      // Ensure excludedSites has correct structure
+      if (!Array.isArray(data.excludedSites.exact) || !Array.isArray(data.excludedSites.patterns)) {
+        updates.excludedSites = {
+          exact: Array.isArray(data.excludedSites.exact) ? data.excludedSites.exact : [],
+          patterns: Array.isArray(data.excludedSites.patterns) ? data.excludedSites.patterns : []
+        };
       }
-    });
+    }
+
+    if (Object.keys(updates).length > 0) {
+      chrome.storage.sync.set(updates, () => {
+        if (callback) callback();
+      });
+    } else {
+      if (callback) callback();
+    }
+  });
+}
+
+// On installation or update, set default values.
+chrome.runtime.onInstalled.addListener((details) => {
+  ensureStorageDefaults(() => {
     updateActionBehavior();
-  }
+  });
 });
 
-// **FIX:** Add a listener for browser startup to ensure the correct action is set.
+// On browser startup, ensure defaults and update behavior
 chrome.runtime.onStartup.addListener(() => {
+  ensureStorageDefaults(() => {
+    updateActionBehavior();
+  });
+});
+
+// Also ensure defaults when service worker starts (catches restarts)
+ensureStorageDefaults(() => {
   updateActionBehavior();
 });
 
@@ -295,7 +334,7 @@ function saveSiteZoom(tabId, zoomFactor) {
       // Skip excluded sites
       if (isExcluded(hostname, data.excludedSites)) return;
       const siteSettings = data.siteSettings || {};
-      const defaultToggleZoom = data.toggleZoom || 150;
+      const defaultToggleZoom = data.toggleZoom || DEFAULT_TOGGLE_ZOOM;
 
       // Check site limit before adding new site
       if (!siteSettings[hostname] && Object.keys(siteSettings).length >= MAX_SITES) {
@@ -356,7 +395,8 @@ function toggleZoom() {
   zoomSaveTimers.clear();
 
   chrome.storage.sync.get(['toggleZoom', 'isToggledActive', 'siteSettings', 'excludedSites'], (data) => {
-    if (!data.toggleZoom) return;
+    // Use defaults if storage values are missing
+    const toggleZoom = data.toggleZoom || DEFAULT_TOGGLE_ZOOM;
     const newToggledState = !data.isToggledActive;
     const siteSettings = data.siteSettings || {};
     const excludedSites = data.excludedSites || { exact: [], patterns: [] };
@@ -371,7 +411,7 @@ function toggleZoom() {
               if (isExcluded(hostname, excludedSites)) return;
               const siteConfig = hostname ? siteSettings[hostname] : null;
               // Use site-specific toggle zoom or default for zoomed state
-              const siteToggleZoom = siteConfig?.toggleZoom ?? data.toggleZoom;
+              const siteToggleZoom = siteConfig?.toggleZoom ?? toggleZoom;
               // Use site-specific base zoom or 100% for unzoomed state
               const siteBaseZoom = siteConfig?.baseZoom ?? 100;
               const targetZoomFactor = newToggledState ? (siteToggleZoom / 100) : (siteBaseZoom / 100);
@@ -636,7 +676,7 @@ async function exportSettings() {
         version: manifest.version,
         exportDate: new Date().toISOString(),
         settings: {
-          toggleZoom: data.toggleZoom || 150,
+          toggleZoom: data.toggleZoom || DEFAULT_TOGGLE_ZOOM,
           toggleModeEnabled: data.toggleModeEnabled || false,
           isToggledActive: data.isToggledActive || false,
           siteSettings: data.siteSettings || {},
@@ -674,7 +714,7 @@ async function importSettings(importData, mergeMode = 'replace') {
       if (mergeMode === 'replace') {
         // Replace all settings
         newSettings = {
-          toggleZoom: settings.toggleZoom ?? 150,
+          toggleZoom: settings.toggleZoom ?? DEFAULT_TOGGLE_ZOOM,
           toggleModeEnabled: settings.toggleModeEnabled ?? false,
           isToggledActive: settings.isToggledActive ?? false,
           siteSettings: settings.siteSettings ?? {},
@@ -694,7 +734,7 @@ async function importSettings(importData, mergeMode = 'replace') {
         };
 
         newSettings = {
-          toggleZoom: settings.toggleZoom ?? currentData.toggleZoom ?? 150,
+          toggleZoom: settings.toggleZoom ?? currentData.toggleZoom ?? DEFAULT_TOGGLE_ZOOM,
           toggleModeEnabled: settings.toggleModeEnabled ?? currentData.toggleModeEnabled ?? false,
           isToggledActive: settings.isToggledActive ?? currentData.isToggledActive ?? false,
           siteSettings: mergedSiteSettings,
