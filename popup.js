@@ -231,15 +231,28 @@ document.addEventListener('DOMContentLoaded', function() {
   function checkAndUpdateExclusionUI() {
     if (!currentHostname) return;
 
+    // Show exclusion section immediately (will be populated by response)
+    if (exclusionSection) exclusionSection.style.display = 'block';
+
+    // Update button labels with current hostname (in case message fails)
+    if (excludeExactBtn) {
+      excludeExactBtn.textContent = currentHostname;
+    }
+    if (excludePatternBtn) {
+      excludePatternBtn.textContent = `*.${currentRootDomain}`;
+    }
+
     chrome.runtime.sendMessage(
       { type: "CHECK_EXCLUSION", hostname: currentHostname },
       (response) => {
-        if (chrome.runtime.lastError) return;
+        if (chrome.runtime.lastError || !response) {
+          // On error, default to showing exclude options
+          if (excludeOptions) excludeOptions.style.display = 'block';
+          if (excludedIndicator) excludedIndicator.style.display = 'none';
+          return;
+        }
 
         currentExclusionInfo = response;
-
-        // Show exclusion section
-        if (exclusionSection) exclusionSection.style.display = 'block';
 
         if (response.isExcluded) {
           // Site is excluded - show indicator

@@ -503,7 +503,7 @@ function createConfigWindow() {
     url: 'popup.html',
     type: 'popup',
     width: 312,
-    height: 700
+    height: 770
   }, (win) => {
     if (win && win.id) {
       chrome.storage.session.set({ configWindowId: win.id });
