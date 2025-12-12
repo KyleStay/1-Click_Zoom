@@ -4,11 +4,25 @@ const CONTEXT_MENU_SITES_ID = "manageSites";
 const CONTEXT_MENU_EXCLUDE_EXACT_ID = "excludeExact";
 const CONTEXT_MENU_EXCLUDE_PATTERN_ID = "excludePattern";
 const CONTEXT_MENU_REMOVE_EXCLUSION_ID = "removeExclusion";
+// Page context menu IDs (right-click on webpage)
+const PAGE_MENU_EXCLUDE_EXACT_ID = "pageExcludeExact";
+const PAGE_MENU_EXCLUDE_PATTERN_ID = "pageExcludePattern";
+const PAGE_MENU_REMOVE_EXCLUSION_ID = "pageRemoveExclusion";
 const ZOOM_DIFF_THRESHOLD = 0.01;
 const VALID_URL_PREFIXES = ['http', 'file'];
-const MANUAL_ZOOM_DEBOUNCE_MS = 1500;
+const MANUAL_ZOOM_DEBOUNCE_MS = 1000;
 const MAX_SITES = 100;
 const BADGE_DISPLAY_MS = 2000;
+const DEFAULT_TOGGLE_ZOOM = 150;
+
+// Default storage values
+const STORAGE_DEFAULTS = {
+  toggleZoom: DEFAULT_TOGGLE_ZOOM,
+  toggleModeEnabled: false,
+  isToggledActive: false,
+  siteSettings: {},
+  excludedSites: { exact: [], patterns: [] }
+};
 
 // Track extension-initiated zooms to ignore in onZoomChange
 const pendingExtensionZooms = new Map();
@@ -56,10 +70,11 @@ function isExcluded(hostname, excludedSites) {
 // Helper to get effective zoom for a site based on current state
 function getEffectiveZoom(hostname, data) {
   const siteConfig = data.siteSettings?.[hostname];
+  const toggleZoom = data.toggleZoom || DEFAULT_TOGGLE_ZOOM;
 
   if (data.isToggledActive) {
     // Zoom enabled: use site toggle zoom or default
-    return (siteConfig?.toggleZoom ?? data.toggleZoom) / 100;
+    return (siteConfig?.toggleZoom ?? toggleZoom) / 100;
   }
   // Zoom disabled: use site base zoom or 100%
   return (siteConfig?.baseZoom ?? 100) / 100;
@@ -73,35 +88,67 @@ function setZoomTracked(tabId, zoomFactor) {
 
 // --- Event Listeners ---
 
-// On installation, set default values.
-chrome.runtime.onInstalled.addListener((details) => {
-  if (details.reason === 'install') {
-    chrome.storage.sync.set({
-      toggleZoom: 150,
-      toggleModeEnabled: false,
-      isToggledActive: false,
-      siteSettings: {},
-      excludedSites: { exact: [], patterns: [] }
-    }, () => {
-      updateActionBehavior();
-    });
-  } else {
-    // On update, ensure siteSettings and excludedSites exist and behavior is correct
-    chrome.storage.sync.get(['siteSettings', 'excludedSites'], (data) => {
-      const updates = {};
-      if (!data.siteSettings) updates.siteSettings = {};
-      if (!data.excludedSites) updates.excludedSites = { exact: [], patterns: [] };
-      if (Object.keys(updates).length > 0) {
-        chrome.storage.sync.set(updates);
+// Helper to ensure all storage defaults exist (handles install, update, and recovery)
+function ensureStorageDefaults(callback) {
+  chrome.storage.sync.get(null, (data) => {
+    const updates = {};
+
+    // Check each default value and add if missing or invalid
+    if (data.toggleZoom === undefined || data.toggleZoom === null || typeof data.toggleZoom !== 'number') {
+      updates.toggleZoom = STORAGE_DEFAULTS.toggleZoom;
+    }
+    if (data.toggleModeEnabled === undefined || data.toggleModeEnabled === null) {
+      updates.toggleModeEnabled = STORAGE_DEFAULTS.toggleModeEnabled;
+    }
+    if (data.isToggledActive === undefined || data.isToggledActive === null) {
+      updates.isToggledActive = STORAGE_DEFAULTS.isToggledActive;
+    }
+    if (!data.siteSettings || typeof data.siteSettings !== 'object') {
+      updates.siteSettings = STORAGE_DEFAULTS.siteSettings;
+    }
+    if (!data.excludedSites || typeof data.excludedSites !== 'object') {
+      updates.excludedSites = STORAGE_DEFAULTS.excludedSites;
+    } else {
+      // Ensure excludedSites has correct structure
+      if (!Array.isArray(data.excludedSites.exact) || !Array.isArray(data.excludedSites.patterns)) {
+        updates.excludedSites = {
+          exact: Array.isArray(data.excludedSites.exact) ? data.excludedSites.exact : [],
+          patterns: Array.isArray(data.excludedSites.patterns) ? data.excludedSites.patterns : []
+        };
       }
-    });
+    }
+
+    if (Object.keys(updates).length > 0) {
+      chrome.storage.sync.set(updates, () => {
+        if (callback) callback();
+      });
+    } else {
+      if (callback) callback();
+    }
+  });
+}
+
+// On installation or update, set default values.
+chrome.runtime.onInstalled.addListener((details) => {
+  ensureStorageDefaults(() => {
     updateActionBehavior();
-  }
+  });
 });
 
-// **FIX:** Add a listener for browser startup to ensure the correct action is set.
+// On browser startup, ensure defaults and update behavior
 chrome.runtime.onStartup.addListener(() => {
+  ensureStorageDefaults(() => {
+    updateActionBehavior();
+  });
+});
+
+// Also ensure defaults when service worker starts (catches restarts)
+ensureStorageDefaults(() => {
   updateActionBehavior();
+  // Restore badge state
+  chrome.storage.sync.get('isToggledActive', (data) => {
+    updateZoomStateBadge(data.isToggledActive || false);
+  });
 });
 
 // Listen for messages from the popup to update behavior.
@@ -181,7 +228,14 @@ chrome.commands.onCommand.addListener((command) => {
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && isZoomableUrl(tab.url)) {
     applyZoomToFutureTab(tabId);
+    // Update context menu visibility for this tab
+    updateContextMenuVisibility(tabId);
   }
+});
+
+// Listen for tab activation to update context menu visibility
+chrome.tabs.onActivated.addListener((activeInfo) => {
+  updateContextMenuVisibility(activeInfo.tabId);
 });
 
 // Listen for manual zoom changes to auto-save per-site preferences
@@ -227,7 +281,8 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     openConfigurationPage();
   } else if (info.menuItemId === CONTEXT_MENU_SITES_ID) {
     chrome.tabs.create({ url: 'sites.html' });
-  } else if (info.menuItemId === CONTEXT_MENU_EXCLUDE_EXACT_ID) {
+  } else if (info.menuItemId === CONTEXT_MENU_EXCLUDE_EXACT_ID ||
+             info.menuItemId === PAGE_MENU_EXCLUDE_EXACT_ID) {
     // Exclude exact hostname of current tab
     if (tab?.url && isZoomableUrl(tab.url)) {
       const hostname = getHostname(tab.url);
@@ -235,7 +290,8 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
         addExclusion(hostname, false);
       }
     }
-  } else if (info.menuItemId === CONTEXT_MENU_EXCLUDE_PATTERN_ID) {
+  } else if (info.menuItemId === CONTEXT_MENU_EXCLUDE_PATTERN_ID ||
+             info.menuItemId === PAGE_MENU_EXCLUDE_PATTERN_ID) {
     // Exclude all subdomains of current tab's domain
     if (tab?.url && isZoomableUrl(tab.url)) {
       const hostname = getHostname(tab.url);
@@ -243,7 +299,8 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
         addExclusion(hostname, true);
       }
     }
-  } else if (info.menuItemId === CONTEXT_MENU_REMOVE_EXCLUSION_ID) {
+  } else if (info.menuItemId === CONTEXT_MENU_REMOVE_EXCLUSION_ID ||
+             info.menuItemId === PAGE_MENU_REMOVE_EXCLUSION_ID) {
     // Remove exclusion for current tab's hostname
     if (tab?.url && isZoomableUrl(tab.url)) {
       const hostname = getHostname(tab.url);
@@ -288,7 +345,7 @@ function saveSiteZoom(tabId, zoomFactor) {
       // Skip excluded sites
       if (isExcluded(hostname, data.excludedSites)) return;
       const siteSettings = data.siteSettings || {};
-      const defaultToggleZoom = data.toggleZoom || 150;
+      const defaultToggleZoom = data.toggleZoom || DEFAULT_TOGGLE_ZOOM;
 
       // Check site limit before adding new site
       if (!siteSettings[hostname] && Object.keys(siteSettings).length >= MAX_SITES) {
@@ -331,11 +388,12 @@ function saveSiteZoom(tabId, zoomFactor) {
           return;
         }
 
-        // Always show badge notification for manual zoom changes
+        // Show temporary badge notification for manual zoom changes
         chrome.action.setBadgeText({ text: '✓' });
         chrome.action.setBadgeBackgroundColor({ color: '#2da44e' });
         setTimeout(() => {
-          chrome.action.setBadgeText({ text: '' });
+          // Restore the zoom state badge (+ if enabled, nothing if disabled)
+          updateZoomStateBadge(data.isToggledActive);
         }, BADGE_DISPLAY_MS);
       });
     });
@@ -349,12 +407,16 @@ function toggleZoom() {
   zoomSaveTimers.clear();
 
   chrome.storage.sync.get(['toggleZoom', 'isToggledActive', 'siteSettings', 'excludedSites'], (data) => {
-    if (!data.toggleZoom) return;
+    // Use defaults if storage values are missing
+    const toggleZoom = data.toggleZoom || DEFAULT_TOGGLE_ZOOM;
     const newToggledState = !data.isToggledActive;
     const siteSettings = data.siteSettings || {};
     const excludedSites = data.excludedSites || { exact: [], patterns: [] };
 
     chrome.storage.sync.set({ isToggledActive: newToggledState }, () => {
+      // Update badge to show zoom state
+      updateZoomStateBadge(newToggledState);
+
       chrome.windows.getAll({ populate: true, windowTypes: ['normal', 'app'] }, (windows) => {
         windows.forEach((win) => {
           win.tabs.forEach((tab) => {
@@ -364,7 +426,7 @@ function toggleZoom() {
               if (isExcluded(hostname, excludedSites)) return;
               const siteConfig = hostname ? siteSettings[hostname] : null;
               // Use site-specific toggle zoom or default for zoomed state
-              const siteToggleZoom = siteConfig?.toggleZoom ?? data.toggleZoom;
+              const siteToggleZoom = siteConfig?.toggleZoom ?? toggleZoom;
               // Use site-specific base zoom or 100% for unzoomed state
               const siteBaseZoom = siteConfig?.baseZoom ?? 100;
               const targetZoomFactor = newToggledState ? (siteToggleZoom / 100) : (siteBaseZoom / 100);
@@ -390,65 +452,189 @@ function toggleZoom() {
 
 function updateActionBehavior() {
   chrome.storage.sync.get('toggleModeEnabled', (data) => {
-    if (data.toggleModeEnabled) {
-      // 1-Click Mode: icon click toggles zoom directly
-      chrome.action.setPopup({ popup: '' });
-      // Remove existing menu first to avoid duplicate ID error, then create
-      chrome.contextMenus.removeAll(() => {
-        chrome.contextMenus.create({
-          id: CONTEXT_MENU_ID,
-          title: "Configure Zoom",
-          contexts: ["action"]
-        }, () => {
-          if (chrome.runtime.lastError) {
-            console.warn('Context menu creation warning:', chrome.runtime.lastError.message);
-          }
-        });
-        chrome.contextMenus.create({
-          id: CONTEXT_MENU_SITES_ID,
-          title: "Manage Sites",
-          contexts: ["action"]
-        }, () => {
-          if (chrome.runtime.lastError) {
-            console.warn('Context menu creation warning:', chrome.runtime.lastError.message);
-          }
-        });
-        // Exclusion menu items
-        chrome.contextMenus.create({
-          id: CONTEXT_MENU_EXCLUDE_EXACT_ID,
-          title: "Exclude this site",
-          contexts: ["action"]
-        }, () => {
-          if (chrome.runtime.lastError) {
-            console.warn('Context menu creation warning:', chrome.runtime.lastError.message);
-          }
-        });
-        chrome.contextMenus.create({
-          id: CONTEXT_MENU_EXCLUDE_PATTERN_ID,
-          title: "Exclude all subdomains",
-          contexts: ["action"]
-        }, () => {
-          if (chrome.runtime.lastError) {
-            console.warn('Context menu creation warning:', chrome.runtime.lastError.message);
-          }
-        });
-        chrome.contextMenus.create({
-          id: CONTEXT_MENU_REMOVE_EXCLUSION_ID,
-          title: "Remove exclusion",
-          contexts: ["action"]
-        }, () => {
-          if (chrome.runtime.lastError) {
-            console.warn('Context menu creation warning:', chrome.runtime.lastError.message);
-          }
-        });
-      });
-    } else {
-      // Default Mode: icon click opens popup
-      chrome.action.setPopup({ popup: 'popup.html' });
-      chrome.contextMenus.removeAll();
-      // Don't reset isToggledActive - preserve zoom state when switching modes
-    }
+    // Remove existing menus first to avoid duplicate ID error
+    chrome.contextMenus.removeAll(() => {
+      // Always create page context menu items (right-click on webpage)
+      createPageContextMenus();
+
+      if (data.toggleModeEnabled) {
+        // 1-Click Mode: icon click toggles zoom directly
+        chrome.action.setPopup({ popup: '' });
+        // Create action context menu items (right-click on extension icon)
+        createActionContextMenus();
+      } else {
+        // Default Mode: icon click opens popup
+        chrome.action.setPopup({ popup: 'popup.html' });
+        // Don't reset isToggledActive - preserve zoom state when switching modes
+      }
+    });
   });
+}
+
+// Create context menu items for right-clicking on the extension icon (1-click mode only)
+function createActionContextMenus() {
+  chrome.contextMenus.create({
+    id: CONTEXT_MENU_ID,
+    title: "Configure Zoom",
+    contexts: ["action"]
+  }, logContextMenuError);
+
+  chrome.contextMenus.create({
+    id: CONTEXT_MENU_SITES_ID,
+    title: "Manage Sites",
+    contexts: ["action"]
+  }, logContextMenuError);
+
+  // Separator before exclusion items
+  chrome.contextMenus.create({
+    id: "separator1",
+    type: "separator",
+    contexts: ["action"]
+  }, logContextMenuError);
+
+  // Exclusion items - visibility will be updated dynamically
+  chrome.contextMenus.create({
+    id: CONTEXT_MENU_EXCLUDE_EXACT_ID,
+    title: "Exclude this site",
+    contexts: ["action"],
+    visible: true
+  }, logContextMenuError);
+
+  chrome.contextMenus.create({
+    id: CONTEXT_MENU_EXCLUDE_PATTERN_ID,
+    title: "Exclude all subdomains",
+    contexts: ["action"],
+    visible: true
+  }, logContextMenuError);
+
+  chrome.contextMenus.create({
+    id: CONTEXT_MENU_REMOVE_EXCLUSION_ID,
+    title: "Remove exclusion",
+    contexts: ["action"],
+    visible: false  // Hidden by default, shown when site is excluded
+  }, logContextMenuError);
+
+  // Update visibility for current tab
+  updateContextMenuVisibility();
+}
+
+// Create context menu items for right-clicking on a webpage (always available)
+function createPageContextMenus() {
+  // Parent menu item
+  chrome.contextMenus.create({
+    id: "zoomExclusionMenu",
+    title: "1-Click Zoom",
+    contexts: ["page"]
+  }, logContextMenuError);
+
+  // Exclusion items - visibility will be updated dynamically
+  chrome.contextMenus.create({
+    id: PAGE_MENU_EXCLUDE_EXACT_ID,
+    parentId: "zoomExclusionMenu",
+    title: "Exclude this site",
+    contexts: ["page"],
+    visible: true
+  }, logContextMenuError);
+
+  chrome.contextMenus.create({
+    id: PAGE_MENU_EXCLUDE_PATTERN_ID,
+    parentId: "zoomExclusionMenu",
+    title: "Exclude all subdomains",
+    contexts: ["page"],
+    visible: true
+  }, logContextMenuError);
+
+  chrome.contextMenus.create({
+    id: PAGE_MENU_REMOVE_EXCLUSION_ID,
+    parentId: "zoomExclusionMenu",
+    title: "Remove exclusion",
+    contexts: ["page"],
+    visible: false  // Hidden by default, shown when site is excluded
+  }, logContextMenuError);
+
+  // Update visibility for current tab
+  updateContextMenuVisibility();
+}
+
+// Update context menu visibility based on current tab's exclusion status
+function updateContextMenuVisibility(tabId) {
+  // Get the tab to check
+  const getTab = tabId
+    ? new Promise(resolve => chrome.tabs.get(tabId, resolve))
+    : new Promise(resolve => chrome.tabs.query({ active: true, currentWindow: true }, tabs => resolve(tabs[0])));
+
+  getTab.then(tab => {
+    if (chrome.runtime.lastError || !tab?.url || !isZoomableUrl(tab.url)) {
+      // Not a zoomable page - hide all exclusion options
+      updateExclusionMenuItems(false, false);
+      return;
+    }
+
+    const hostname = getHostname(tab.url);
+    if (!hostname) {
+      updateExclusionMenuItems(false, false);
+      return;
+    }
+
+    // Check if this hostname is excluded
+    chrome.storage.sync.get('excludedSites', (data) => {
+      const excludedSites = data.excludedSites || { exact: [], patterns: [] };
+      const isExact = excludedSites.exact?.includes(hostname);
+
+      let isExcludedByPattern = false;
+      for (const pattern of excludedSites.patterns || []) {
+        const domain = pattern.replace('*.', '');
+        if (hostname === domain || hostname.endsWith('.' + domain)) {
+          isExcludedByPattern = true;
+          break;
+        }
+      }
+
+      const siteIsExcluded = isExact || isExcludedByPattern;
+      updateExclusionMenuItems(!siteIsExcluded, siteIsExcluded);
+    });
+  });
+}
+
+// Helper to update the visibility of exclusion menu items
+function updateExclusionMenuItems(showAddOptions, showRemoveOption) {
+  // Update action context menu items (may not exist if not in 1-click mode)
+  chrome.contextMenus.update(CONTEXT_MENU_EXCLUDE_EXACT_ID, { visible: showAddOptions }, () => {
+    if (chrome.runtime.lastError) { /* Menu may not exist */ }
+  });
+  chrome.contextMenus.update(CONTEXT_MENU_EXCLUDE_PATTERN_ID, { visible: showAddOptions }, () => {
+    if (chrome.runtime.lastError) { /* Menu may not exist */ }
+  });
+  chrome.contextMenus.update(CONTEXT_MENU_REMOVE_EXCLUSION_ID, { visible: showRemoveOption }, () => {
+    if (chrome.runtime.lastError) { /* Menu may not exist */ }
+  });
+
+  // Update page context menu items
+  chrome.contextMenus.update(PAGE_MENU_EXCLUDE_EXACT_ID, { visible: showAddOptions }, () => {
+    if (chrome.runtime.lastError) { /* Menu may not exist */ }
+  });
+  chrome.contextMenus.update(PAGE_MENU_EXCLUDE_PATTERN_ID, { visible: showAddOptions }, () => {
+    if (chrome.runtime.lastError) { /* Menu may not exist */ }
+  });
+  chrome.contextMenus.update(PAGE_MENU_REMOVE_EXCLUSION_ID, { visible: showRemoveOption }, () => {
+    if (chrome.runtime.lastError) { /* Menu may not exist */ }
+  });
+}
+
+function logContextMenuError() {
+  if (chrome.runtime.lastError) {
+    console.warn('Context menu creation warning:', chrome.runtime.lastError.message);
+  }
+}
+
+// Update the extension icon badge to show zoom state
+function updateZoomStateBadge(isActive) {
+  if (isActive) {
+    chrome.action.setBadgeText({ text: '+' });
+    chrome.action.setBadgeBackgroundColor({ color: '#2da44e' });
+  } else {
+    chrome.action.setBadgeText({ text: '' });
+  }
 }
 
 function applyZoomToFutureTab(tabId) {
@@ -531,6 +717,8 @@ async function addExclusion(hostname, isPattern) {
       }
 
       chrome.storage.sync.set({ excludedSites }, () => {
+        // Update context menu to show "Remove" instead of "Add" options
+        updateContextMenuVisibility();
         resolve({ success: true, excludedSites });
       });
     });
@@ -550,6 +738,8 @@ async function removeExclusion(value, isPattern) {
       }
 
       chrome.storage.sync.set({ excludedSites }, () => {
+        // Update context menu to show "Add" options instead of "Remove"
+        updateContextMenuVisibility();
         resolve({ success: true, excludedSites });
       });
     });
@@ -594,7 +784,7 @@ async function exportSettings() {
         version: manifest.version,
         exportDate: new Date().toISOString(),
         settings: {
-          toggleZoom: data.toggleZoom || 150,
+          toggleZoom: data.toggleZoom || DEFAULT_TOGGLE_ZOOM,
           toggleModeEnabled: data.toggleModeEnabled || false,
           isToggledActive: data.isToggledActive || false,
           siteSettings: data.siteSettings || {},
@@ -632,7 +822,7 @@ async function importSettings(importData, mergeMode = 'replace') {
       if (mergeMode === 'replace') {
         // Replace all settings
         newSettings = {
-          toggleZoom: settings.toggleZoom ?? 150,
+          toggleZoom: settings.toggleZoom ?? DEFAULT_TOGGLE_ZOOM,
           toggleModeEnabled: settings.toggleModeEnabled ?? false,
           isToggledActive: settings.isToggledActive ?? false,
           siteSettings: settings.siteSettings ?? {},
@@ -652,7 +842,7 @@ async function importSettings(importData, mergeMode = 'replace') {
         };
 
         newSettings = {
-          toggleZoom: settings.toggleZoom ?? currentData.toggleZoom ?? 150,
+          toggleZoom: settings.toggleZoom ?? currentData.toggleZoom ?? DEFAULT_TOGGLE_ZOOM,
           toggleModeEnabled: settings.toggleModeEnabled ?? currentData.toggleModeEnabled ?? false,
           isToggledActive: settings.isToggledActive ?? currentData.isToggledActive ?? false,
           siteSettings: mergedSiteSettings,
@@ -665,6 +855,7 @@ async function importSettings(importData, mergeMode = 'replace') {
           resolve({ success: false, error: chrome.runtime.lastError.message });
         } else {
           updateActionBehavior();
+          updateZoomStateBadge(newSettings.isToggledActive);
           resolve({ success: true });
         }
       });
