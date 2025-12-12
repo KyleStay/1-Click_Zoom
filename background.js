@@ -10,7 +10,7 @@ const PAGE_MENU_EXCLUDE_PATTERN_ID = "pageExcludePattern";
 const PAGE_MENU_REMOVE_EXCLUSION_ID = "pageRemoveExclusion";
 const ZOOM_DIFF_THRESHOLD = 0.01;
 const VALID_URL_PREFIXES = ['http', 'file'];
-const MANUAL_ZOOM_DEBOUNCE_MS = 1500;
+const MANUAL_ZOOM_DEBOUNCE_MS = 1000;
 const MAX_SITES = 100;
 const BADGE_DISPLAY_MS = 2000;
 const DEFAULT_TOGGLE_ZOOM = 150;
@@ -145,6 +145,10 @@ chrome.runtime.onStartup.addListener(() => {
 // Also ensure defaults when service worker starts (catches restarts)
 ensureStorageDefaults(() => {
   updateActionBehavior();
+  // Restore badge state
+  chrome.storage.sync.get('isToggledActive', (data) => {
+    updateZoomStateBadge(data.isToggledActive || false);
+  });
 });
 
 // Listen for messages from the popup to update behavior.
@@ -384,11 +388,12 @@ function saveSiteZoom(tabId, zoomFactor) {
           return;
         }
 
-        // Always show badge notification for manual zoom changes
+        // Show temporary badge notification for manual zoom changes
         chrome.action.setBadgeText({ text: '✓' });
         chrome.action.setBadgeBackgroundColor({ color: '#2da44e' });
         setTimeout(() => {
-          chrome.action.setBadgeText({ text: '' });
+          // Restore the zoom state badge (+ if enabled, nothing if disabled)
+          updateZoomStateBadge(data.isToggledActive);
         }, BADGE_DISPLAY_MS);
       });
     });
@@ -409,6 +414,9 @@ function toggleZoom() {
     const excludedSites = data.excludedSites || { exact: [], patterns: [] };
 
     chrome.storage.sync.set({ isToggledActive: newToggledState }, () => {
+      // Update badge to show zoom state
+      updateZoomStateBadge(newToggledState);
+
       chrome.windows.getAll({ populate: true, windowTypes: ['normal', 'app'] }, (windows) => {
         windows.forEach((win) => {
           win.tabs.forEach((tab) => {
@@ -616,6 +624,16 @@ function updateExclusionMenuItems(showAddOptions, showRemoveOption) {
 function logContextMenuError() {
   if (chrome.runtime.lastError) {
     console.warn('Context menu creation warning:', chrome.runtime.lastError.message);
+  }
+}
+
+// Update the extension icon badge to show zoom state
+function updateZoomStateBadge(isActive) {
+  if (isActive) {
+    chrome.action.setBadgeText({ text: '+' });
+    chrome.action.setBadgeBackgroundColor({ color: '#2da44e' });
+  } else {
+    chrome.action.setBadgeText({ text: '' });
   }
 }
 
@@ -837,6 +855,7 @@ async function importSettings(importData, mergeMode = 'replace') {
           resolve({ success: false, error: chrome.runtime.lastError.message });
         } else {
           updateActionBehavior();
+          updateZoomStateBadge(newSettings.isToggledActive);
           resolve({ success: true });
         }
       });
