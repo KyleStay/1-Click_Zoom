@@ -36,9 +36,33 @@ document.addEventListener('DOMContentLoaded', function() {
   const resetSiteBtn = document.getElementById('resetSiteBtn');
   const manageSitesBtn = document.getElementById('manageSitesBtn');
 
+  // Exclusion elements
+  const exclusionSection = document.getElementById('exclusion-section');
+  const excludeOptions = document.getElementById('exclude-options');
+  const excludedIndicator = document.getElementById('excluded-indicator');
+  const excludeExactBtn = document.getElementById('excludeExactBtn');
+  const excludePatternBtn = document.getElementById('excludePatternBtn');
+  const excludedReason = document.getElementById('excluded-reason');
+  const removeExclusionBtn = document.getElementById('removeExclusionBtn');
+
+  // Import/Export elements
+  const exportBtn = document.getElementById('exportBtn');
+  const importBtn = document.getElementById('importBtn');
+  const importFileInput = document.getElementById('importFileInput');
+
   // Current tab state
   let currentHostname = null;
+  let currentRootDomain = null;
+  let currentExclusionInfo = null;
   let isZoomEnabled = false;
+
+  // Helper to extract root domain from hostname
+  function getRootDomain(hostname) {
+    if (!hostname) return null;
+    const parts = hostname.split('.');
+    if (parts.length <= 2) return hostname;
+    return parts.slice(-2).join('.');
+  }
 
   // --- Load Initial State ---
   chrome.storage.sync.get(['toggleZoom', 'toggleModeEnabled', 'isToggledActive', 'siteSettings'], (data) => {
@@ -160,16 +184,20 @@ document.addEventListener('DOMContentLoaded', function() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tab = tabs[0];
       if (!tab?.url || !isZoomableUrl(tab.url)) {
-        // Not a zoomable page, hide site section
+        // Not a zoomable page, hide site section and exclusion section
         if (siteSection) siteSection.style.display = 'none';
+        if (exclusionSection) exclusionSection.style.display = 'none';
         return;
       }
 
       currentHostname = getHostname(tab.url);
       if (!currentHostname) {
         if (siteSection) siteSection.style.display = 'none';
+        if (exclusionSection) exclusionSection.style.display = 'none';
         return;
       }
+
+      currentRootDomain = getRootDomain(currentHostname);
 
       // Show site section
       if (siteSection) siteSection.style.display = 'block';
@@ -194,7 +222,53 @@ document.addEventListener('DOMContentLoaded', function() {
         if (resetSiteBtn) resetSiteBtn.style.display = 'none';
         if (siteHostname) siteHostname.title = 'Using default zoom';
       }
+
+      // Check exclusion status
+      checkAndUpdateExclusionUI();
     });
+  }
+
+  function checkAndUpdateExclusionUI() {
+    if (!currentHostname) return;
+
+    chrome.runtime.sendMessage(
+      { type: "CHECK_EXCLUSION", hostname: currentHostname },
+      (response) => {
+        if (chrome.runtime.lastError) return;
+
+        currentExclusionInfo = response;
+
+        // Show exclusion section
+        if (exclusionSection) exclusionSection.style.display = 'block';
+
+        if (response.isExcluded) {
+          // Site is excluded - show indicator
+          if (excludeOptions) excludeOptions.style.display = 'none';
+          if (excludedIndicator) excludedIndicator.style.display = 'flex';
+
+          // Show reason
+          if (excludedReason) {
+            if (response.isExact) {
+              excludedReason.textContent = `${currentHostname} excluded`;
+            } else if (response.matchedPattern) {
+              excludedReason.textContent = `Matches ${response.matchedPattern}`;
+            }
+          }
+        } else {
+          // Site is not excluded - show exclude options
+          if (excludeOptions) excludeOptions.style.display = 'block';
+          if (excludedIndicator) excludedIndicator.style.display = 'none';
+
+          // Update button labels
+          if (excludeExactBtn) {
+            excludeExactBtn.textContent = currentHostname;
+          }
+          if (excludePatternBtn) {
+            excludePatternBtn.textContent = `*.${currentRootDomain}`;
+          }
+        }
+      }
+    );
   }
 
   // Reset site button handler
@@ -241,6 +315,166 @@ document.addEventListener('DOMContentLoaded', function() {
   if (manageSitesBtn) {
     manageSitesBtn.addEventListener('click', () => {
       chrome.tabs.create({ url: 'sites.html' });
+    });
+  }
+
+  // --- Exclusion Button Handlers ---
+
+  // Exclude exact hostname
+  if (excludeExactBtn) {
+    excludeExactBtn.addEventListener('click', () => {
+      if (!currentHostname) return;
+
+      chrome.runtime.sendMessage(
+        { type: "ADD_EXCLUSION", hostname: currentHostname, isPattern: false },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            showStatus('Failed to add exclusion', 'red');
+            return;
+          }
+          showStatus(`Excluded ${currentHostname}`, 'green');
+          checkAndUpdateExclusionUI();
+        }
+      );
+    });
+  }
+
+  // Exclude pattern (*.domain.com)
+  if (excludePatternBtn) {
+    excludePatternBtn.addEventListener('click', () => {
+      if (!currentHostname) return;
+
+      chrome.runtime.sendMessage(
+        { type: "ADD_EXCLUSION", hostname: currentHostname, isPattern: true },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            showStatus('Failed to add exclusion', 'red');
+            return;
+          }
+          showStatus(`Excluded *.${currentRootDomain}`, 'green');
+          checkAndUpdateExclusionUI();
+        }
+      );
+    });
+  }
+
+  // Remove exclusion
+  if (removeExclusionBtn) {
+    removeExclusionBtn.addEventListener('click', () => {
+      if (!currentExclusionInfo) return;
+
+      let value, isPattern;
+      if (currentExclusionInfo.isExact) {
+        value = currentHostname;
+        isPattern = false;
+      } else if (currentExclusionInfo.matchedPattern) {
+        value = currentExclusionInfo.matchedPattern;
+        isPattern = true;
+      } else {
+        return;
+      }
+
+      chrome.runtime.sendMessage(
+        { type: "REMOVE_EXCLUSION", value, isPattern },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            showStatus('Failed to remove exclusion', 'red');
+            return;
+          }
+          showStatus('Exclusion removed', 'green');
+          checkAndUpdateExclusionUI();
+        }
+      );
+    });
+  }
+
+  // --- Import/Export Handlers ---
+
+  // Export settings
+  if (exportBtn) {
+    exportBtn.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ type: "EXPORT_SETTINGS" }, (response) => {
+        if (chrome.runtime.lastError || !response?.success) {
+          showStatus('Export failed', 'red');
+          return;
+        }
+
+        // Create and download JSON file
+        const blob = new Blob([JSON.stringify(response.data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `1-click-zoom-settings-${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        showStatus('Settings exported!', 'green');
+      });
+    });
+  }
+
+  // Import settings
+  if (importBtn && importFileInput) {
+    importBtn.addEventListener('click', () => {
+      importFileInput.click();
+    });
+
+    importFileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const importData = JSON.parse(event.target.result);
+
+          // Check if user has custom settings
+          chrome.runtime.sendMessage({ type: "CHECK_HAS_CUSTOM_SETTINGS" }, (checkResult) => {
+            if (chrome.runtime.lastError) {
+              showStatus('Import failed', 'red');
+              return;
+            }
+
+            let mergeMode = 'replace';
+
+            if (checkResult?.hasCustomSettings) {
+              // Ask user how to handle import
+              const choice = confirm(
+                `You have existing settings (${checkResult.siteCount} sites, ${checkResult.exclusionCount} exclusions).\n\n` +
+                'Click OK to REPLACE all settings with imported data.\n' +
+                'Click Cancel to MERGE (keep existing + add new).'
+              );
+              mergeMode = choice ? 'replace' : 'merge';
+            }
+
+            // Perform import
+            chrome.runtime.sendMessage(
+              { type: "IMPORT_SETTINGS", settings: importData, mergeMode },
+              (importResult) => {
+                if (chrome.runtime.lastError || !importResult?.success) {
+                  showStatus(importResult?.error || 'Import failed', 'red');
+                  return;
+                }
+
+                showStatus('Settings imported!', 'green');
+
+                // Reload the popup to reflect new settings
+                setTimeout(() => {
+                  window.location.reload();
+                }, 1000);
+              }
+            );
+          });
+        } catch (err) {
+          showStatus('Invalid JSON file', 'red');
+        }
+      };
+      reader.readAsText(file);
+
+      // Reset file input
+      importFileInput.value = '';
     });
   }
 });
