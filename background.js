@@ -4,6 +4,10 @@ const CONTEXT_MENU_SITES_ID = "manageSites";
 const CONTEXT_MENU_EXCLUDE_EXACT_ID = "excludeExact";
 const CONTEXT_MENU_EXCLUDE_PATTERN_ID = "excludePattern";
 const CONTEXT_MENU_REMOVE_EXCLUSION_ID = "removeExclusion";
+// Page context menu IDs (right-click on webpage)
+const PAGE_MENU_EXCLUDE_EXACT_ID = "pageExcludeExact";
+const PAGE_MENU_EXCLUDE_PATTERN_ID = "pageExcludePattern";
+const PAGE_MENU_REMOVE_EXCLUSION_ID = "pageRemoveExclusion";
 const ZOOM_DIFF_THRESHOLD = 0.01;
 const VALID_URL_PREFIXES = ['http', 'file'];
 const MANUAL_ZOOM_DEBOUNCE_MS = 1500;
@@ -227,7 +231,8 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     openConfigurationPage();
   } else if (info.menuItemId === CONTEXT_MENU_SITES_ID) {
     chrome.tabs.create({ url: 'sites.html' });
-  } else if (info.menuItemId === CONTEXT_MENU_EXCLUDE_EXACT_ID) {
+  } else if (info.menuItemId === CONTEXT_MENU_EXCLUDE_EXACT_ID ||
+             info.menuItemId === PAGE_MENU_EXCLUDE_EXACT_ID) {
     // Exclude exact hostname of current tab
     if (tab?.url && isZoomableUrl(tab.url)) {
       const hostname = getHostname(tab.url);
@@ -235,7 +240,8 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
         addExclusion(hostname, false);
       }
     }
-  } else if (info.menuItemId === CONTEXT_MENU_EXCLUDE_PATTERN_ID) {
+  } else if (info.menuItemId === CONTEXT_MENU_EXCLUDE_PATTERN_ID ||
+             info.menuItemId === PAGE_MENU_EXCLUDE_PATTERN_ID) {
     // Exclude all subdomains of current tab's domain
     if (tab?.url && isZoomableUrl(tab.url)) {
       const hostname = getHostname(tab.url);
@@ -243,7 +249,8 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
         addExclusion(hostname, true);
       }
     }
-  } else if (info.menuItemId === CONTEXT_MENU_REMOVE_EXCLUSION_ID) {
+  } else if (info.menuItemId === CONTEXT_MENU_REMOVE_EXCLUSION_ID ||
+             info.menuItemId === PAGE_MENU_REMOVE_EXCLUSION_ID) {
     // Remove exclusion for current tab's hostname
     if (tab?.url && isZoomableUrl(tab.url)) {
       const hostname = getHostname(tab.url);
@@ -390,65 +397,100 @@ function toggleZoom() {
 
 function updateActionBehavior() {
   chrome.storage.sync.get('toggleModeEnabled', (data) => {
-    if (data.toggleModeEnabled) {
-      // 1-Click Mode: icon click toggles zoom directly
-      chrome.action.setPopup({ popup: '' });
-      // Remove existing menu first to avoid duplicate ID error, then create
-      chrome.contextMenus.removeAll(() => {
-        chrome.contextMenus.create({
-          id: CONTEXT_MENU_ID,
-          title: "Configure Zoom",
-          contexts: ["action"]
-        }, () => {
-          if (chrome.runtime.lastError) {
-            console.warn('Context menu creation warning:', chrome.runtime.lastError.message);
-          }
-        });
-        chrome.contextMenus.create({
-          id: CONTEXT_MENU_SITES_ID,
-          title: "Manage Sites",
-          contexts: ["action"]
-        }, () => {
-          if (chrome.runtime.lastError) {
-            console.warn('Context menu creation warning:', chrome.runtime.lastError.message);
-          }
-        });
-        // Exclusion menu items
-        chrome.contextMenus.create({
-          id: CONTEXT_MENU_EXCLUDE_EXACT_ID,
-          title: "Exclude this site",
-          contexts: ["action"]
-        }, () => {
-          if (chrome.runtime.lastError) {
-            console.warn('Context menu creation warning:', chrome.runtime.lastError.message);
-          }
-        });
-        chrome.contextMenus.create({
-          id: CONTEXT_MENU_EXCLUDE_PATTERN_ID,
-          title: "Exclude all subdomains",
-          contexts: ["action"]
-        }, () => {
-          if (chrome.runtime.lastError) {
-            console.warn('Context menu creation warning:', chrome.runtime.lastError.message);
-          }
-        });
-        chrome.contextMenus.create({
-          id: CONTEXT_MENU_REMOVE_EXCLUSION_ID,
-          title: "Remove exclusion",
-          contexts: ["action"]
-        }, () => {
-          if (chrome.runtime.lastError) {
-            console.warn('Context menu creation warning:', chrome.runtime.lastError.message);
-          }
-        });
-      });
-    } else {
-      // Default Mode: icon click opens popup
-      chrome.action.setPopup({ popup: 'popup.html' });
-      chrome.contextMenus.removeAll();
-      // Don't reset isToggledActive - preserve zoom state when switching modes
-    }
+    // Remove existing menus first to avoid duplicate ID error
+    chrome.contextMenus.removeAll(() => {
+      // Always create page context menu items (right-click on webpage)
+      createPageContextMenus();
+
+      if (data.toggleModeEnabled) {
+        // 1-Click Mode: icon click toggles zoom directly
+        chrome.action.setPopup({ popup: '' });
+        // Create action context menu items (right-click on extension icon)
+        createActionContextMenus();
+      } else {
+        // Default Mode: icon click opens popup
+        chrome.action.setPopup({ popup: 'popup.html' });
+        // Don't reset isToggledActive - preserve zoom state when switching modes
+      }
+    });
   });
+}
+
+// Create context menu items for right-clicking on the extension icon (1-click mode only)
+function createActionContextMenus() {
+  chrome.contextMenus.create({
+    id: CONTEXT_MENU_ID,
+    title: "Configure Zoom",
+    contexts: ["action"]
+  }, logContextMenuError);
+
+  chrome.contextMenus.create({
+    id: CONTEXT_MENU_SITES_ID,
+    title: "Manage Sites",
+    contexts: ["action"]
+  }, logContextMenuError);
+
+  // Separator before exclusion items
+  chrome.contextMenus.create({
+    id: "separator1",
+    type: "separator",
+    contexts: ["action"]
+  }, logContextMenuError);
+
+  chrome.contextMenus.create({
+    id: CONTEXT_MENU_EXCLUDE_EXACT_ID,
+    title: "Exclude this site",
+    contexts: ["action"]
+  }, logContextMenuError);
+
+  chrome.contextMenus.create({
+    id: CONTEXT_MENU_EXCLUDE_PATTERN_ID,
+    title: "Exclude all subdomains",
+    contexts: ["action"]
+  }, logContextMenuError);
+
+  chrome.contextMenus.create({
+    id: CONTEXT_MENU_REMOVE_EXCLUSION_ID,
+    title: "Remove exclusion",
+    contexts: ["action"]
+  }, logContextMenuError);
+}
+
+// Create context menu items for right-clicking on a webpage (always available)
+function createPageContextMenus() {
+  // Parent menu item
+  chrome.contextMenus.create({
+    id: "zoomExclusionMenu",
+    title: "1-Click Zoom",
+    contexts: ["page"]
+  }, logContextMenuError);
+
+  chrome.contextMenus.create({
+    id: PAGE_MENU_EXCLUDE_EXACT_ID,
+    parentId: "zoomExclusionMenu",
+    title: "Exclude this site",
+    contexts: ["page"]
+  }, logContextMenuError);
+
+  chrome.contextMenus.create({
+    id: PAGE_MENU_EXCLUDE_PATTERN_ID,
+    parentId: "zoomExclusionMenu",
+    title: "Exclude all subdomains",
+    contexts: ["page"]
+  }, logContextMenuError);
+
+  chrome.contextMenus.create({
+    id: PAGE_MENU_REMOVE_EXCLUSION_ID,
+    parentId: "zoomExclusionMenu",
+    title: "Remove exclusion",
+    contexts: ["page"]
+  }, logContextMenuError);
+}
+
+function logContextMenuError() {
+  if (chrome.runtime.lastError) {
+    console.warn('Context menu creation warning:', chrome.runtime.lastError.message);
+  }
 }
 
 function applyZoomToFutureTab(tabId) {
