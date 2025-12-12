@@ -688,8 +688,8 @@ function createConfigWindow() {
   chrome.windows.create({
     url: 'popup.html',
     type: 'popup',
-    width: 312,
-    height: 770
+    width: 296,
+    height: 690
   }, (win) => {
     if (win && win.id) {
       chrome.storage.session.set({ configWindowId: win.id });
