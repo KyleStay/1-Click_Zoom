@@ -224,7 +224,14 @@ chrome.commands.onCommand.addListener((command) => {
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && isZoomableUrl(tab.url)) {
     applyZoomToFutureTab(tabId);
+    // Update context menu visibility for this tab
+    updateContextMenuVisibility(tabId);
   }
+});
+
+// Listen for tab activation to update context menu visibility
+chrome.tabs.onActivated.addListener((activeInfo) => {
+  updateContextMenuVisibility(activeInfo.tabId);
 });
 
 // Listen for manual zoom changes to auto-save per-site preferences
@@ -477,23 +484,30 @@ function createActionContextMenus() {
     contexts: ["action"]
   }, logContextMenuError);
 
+  // Exclusion items - visibility will be updated dynamically
   chrome.contextMenus.create({
     id: CONTEXT_MENU_EXCLUDE_EXACT_ID,
     title: "Exclude this site",
-    contexts: ["action"]
+    contexts: ["action"],
+    visible: true
   }, logContextMenuError);
 
   chrome.contextMenus.create({
     id: CONTEXT_MENU_EXCLUDE_PATTERN_ID,
     title: "Exclude all subdomains",
-    contexts: ["action"]
+    contexts: ["action"],
+    visible: true
   }, logContextMenuError);
 
   chrome.contextMenus.create({
     id: CONTEXT_MENU_REMOVE_EXCLUSION_ID,
     title: "Remove exclusion",
-    contexts: ["action"]
+    contexts: ["action"],
+    visible: false  // Hidden by default, shown when site is excluded
   }, logContextMenuError);
+
+  // Update visibility for current tab
+  updateContextMenuVisibility();
 }
 
 // Create context menu items for right-clicking on a webpage (always available)
@@ -505,26 +519,98 @@ function createPageContextMenus() {
     contexts: ["page"]
   }, logContextMenuError);
 
+  // Exclusion items - visibility will be updated dynamically
   chrome.contextMenus.create({
     id: PAGE_MENU_EXCLUDE_EXACT_ID,
     parentId: "zoomExclusionMenu",
     title: "Exclude this site",
-    contexts: ["page"]
+    contexts: ["page"],
+    visible: true
   }, logContextMenuError);
 
   chrome.contextMenus.create({
     id: PAGE_MENU_EXCLUDE_PATTERN_ID,
     parentId: "zoomExclusionMenu",
     title: "Exclude all subdomains",
-    contexts: ["page"]
+    contexts: ["page"],
+    visible: true
   }, logContextMenuError);
 
   chrome.contextMenus.create({
     id: PAGE_MENU_REMOVE_EXCLUSION_ID,
     parentId: "zoomExclusionMenu",
     title: "Remove exclusion",
-    contexts: ["page"]
+    contexts: ["page"],
+    visible: false  // Hidden by default, shown when site is excluded
   }, logContextMenuError);
+
+  // Update visibility for current tab
+  updateContextMenuVisibility();
+}
+
+// Update context menu visibility based on current tab's exclusion status
+function updateContextMenuVisibility(tabId) {
+  // Get the tab to check
+  const getTab = tabId
+    ? new Promise(resolve => chrome.tabs.get(tabId, resolve))
+    : new Promise(resolve => chrome.tabs.query({ active: true, currentWindow: true }, tabs => resolve(tabs[0])));
+
+  getTab.then(tab => {
+    if (chrome.runtime.lastError || !tab?.url || !isZoomableUrl(tab.url)) {
+      // Not a zoomable page - hide all exclusion options
+      updateExclusionMenuItems(false, false);
+      return;
+    }
+
+    const hostname = getHostname(tab.url);
+    if (!hostname) {
+      updateExclusionMenuItems(false, false);
+      return;
+    }
+
+    // Check if this hostname is excluded
+    chrome.storage.sync.get('excludedSites', (data) => {
+      const excludedSites = data.excludedSites || { exact: [], patterns: [] };
+      const isExact = excludedSites.exact?.includes(hostname);
+
+      let isExcludedByPattern = false;
+      for (const pattern of excludedSites.patterns || []) {
+        const domain = pattern.replace('*.', '');
+        if (hostname === domain || hostname.endsWith('.' + domain)) {
+          isExcludedByPattern = true;
+          break;
+        }
+      }
+
+      const siteIsExcluded = isExact || isExcludedByPattern;
+      updateExclusionMenuItems(!siteIsExcluded, siteIsExcluded);
+    });
+  });
+}
+
+// Helper to update the visibility of exclusion menu items
+function updateExclusionMenuItems(showAddOptions, showRemoveOption) {
+  // Update action context menu items (may not exist if not in 1-click mode)
+  chrome.contextMenus.update(CONTEXT_MENU_EXCLUDE_EXACT_ID, { visible: showAddOptions }, () => {
+    if (chrome.runtime.lastError) { /* Menu may not exist */ }
+  });
+  chrome.contextMenus.update(CONTEXT_MENU_EXCLUDE_PATTERN_ID, { visible: showAddOptions }, () => {
+    if (chrome.runtime.lastError) { /* Menu may not exist */ }
+  });
+  chrome.contextMenus.update(CONTEXT_MENU_REMOVE_EXCLUSION_ID, { visible: showRemoveOption }, () => {
+    if (chrome.runtime.lastError) { /* Menu may not exist */ }
+  });
+
+  // Update page context menu items
+  chrome.contextMenus.update(PAGE_MENU_EXCLUDE_EXACT_ID, { visible: showAddOptions }, () => {
+    if (chrome.runtime.lastError) { /* Menu may not exist */ }
+  });
+  chrome.contextMenus.update(PAGE_MENU_EXCLUDE_PATTERN_ID, { visible: showAddOptions }, () => {
+    if (chrome.runtime.lastError) { /* Menu may not exist */ }
+  });
+  chrome.contextMenus.update(PAGE_MENU_REMOVE_EXCLUSION_ID, { visible: showRemoveOption }, () => {
+    if (chrome.runtime.lastError) { /* Menu may not exist */ }
+  });
 }
 
 function logContextMenuError() {
@@ -613,6 +699,8 @@ async function addExclusion(hostname, isPattern) {
       }
 
       chrome.storage.sync.set({ excludedSites }, () => {
+        // Update context menu to show "Remove" instead of "Add" options
+        updateContextMenuVisibility();
         resolve({ success: true, excludedSites });
       });
     });
@@ -632,6 +720,8 @@ async function removeExclusion(value, isPattern) {
       }
 
       chrome.storage.sync.set({ excludedSites }, () => {
+        // Update context menu to show "Add" options instead of "Remove"
+        updateContextMenuVisibility();
         resolve({ success: true, excludedSites });
       });
     });
