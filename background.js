@@ -21,7 +21,8 @@ const STORAGE_DEFAULTS = {
   toggleModeEnabled: false,
   isToggledActive: false,
   siteSettings: {},
-  excludedSites: { exact: [], patterns: [] }
+  excludedSites: { exact: [], patterns: [] },
+  customPresets: []
 };
 
 // Track extension-initiated zooms to ignore in onZoomChange
@@ -116,6 +117,9 @@ function ensureStorageDefaults(callback) {
           patterns: Array.isArray(data.excludedSites.patterns) ? data.excludedSites.patterns : []
         };
       }
+    }
+    if (!Array.isArray(data.customPresets)) {
+      updates.customPresets = STORAGE_DEFAULTS.customPresets;
     }
 
     if (Object.keys(updates).length > 0) {
@@ -788,7 +792,8 @@ async function exportSettings() {
           toggleModeEnabled: data.toggleModeEnabled || false,
           isToggledActive: data.isToggledActive || false,
           siteSettings: data.siteSettings || {},
-          excludedSites: data.excludedSites || { exact: [], patterns: [] }
+          excludedSites: data.excludedSites || { exact: [], patterns: [] },
+          customPresets: data.customPresets || []
         }
       };
       resolve({ success: true, data: exportData });
@@ -826,7 +831,8 @@ async function importSettings(importData, mergeMode = 'replace') {
           toggleModeEnabled: settings.toggleModeEnabled ?? false,
           isToggledActive: settings.isToggledActive ?? false,
           siteSettings: settings.siteSettings ?? {},
-          excludedSites: settings.excludedSites ?? { exact: [], patterns: [] }
+          excludedSites: settings.excludedSites ?? { exact: [], patterns: [] },
+          customPresets: Array.isArray(settings.customPresets) ? settings.customPresets : []
         };
       } else if (mergeMode === 'merge') {
         // Merge with existing settings
@@ -841,12 +847,17 @@ async function importSettings(importData, mergeMode = 'replace') {
           patterns: [...new Set([...(currentExcluded.patterns || []), ...(importExcluded.patterns || [])])]
         };
 
+        const currentCustomPresets = currentData.customPresets || [];
+        const importCustomPresets = Array.isArray(settings.customPresets) ? settings.customPresets : [];
+        const mergedCustomPresets = [...new Set([...currentCustomPresets, ...importCustomPresets])].slice(0, 6);
+
         newSettings = {
           toggleZoom: settings.toggleZoom ?? currentData.toggleZoom ?? DEFAULT_TOGGLE_ZOOM,
           toggleModeEnabled: settings.toggleModeEnabled ?? currentData.toggleModeEnabled ?? false,
           isToggledActive: settings.isToggledActive ?? currentData.isToggledActive ?? false,
           siteSettings: mergedSiteSettings,
-          excludedSites: mergedExcluded
+          excludedSites: mergedExcluded,
+          customPresets: mergedCustomPresets
         };
       }
 
