@@ -1,3 +1,5 @@
+// Separate-ID development builds do not compete with production passive zoom handlers.
+const MANUAL_DEVELOPMENT_BUILD = chrome.runtime.getManifest().version_name?.endsWith(" manual development") === true;
 // --- Constants and Initial Setup ---
 const CONTEXT_MENU_ID = "configureZoom";
 const CONTEXT_MENU_SITES_ID = "manageSites";
@@ -230,6 +232,7 @@ chrome.commands.onCommand.addListener((command) => {
 
 // Listen for tab updates to apply the correct zoom to future tabs in either mode.
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (MANUAL_DEVELOPMENT_BUILD) return;
   if (changeInfo.status === 'complete' && isZoomableUrl(tab.url)) {
     applyZoomToFutureTab(tabId);
     // Update context menu visibility for this tab
@@ -244,6 +247,7 @@ chrome.tabs.onActivated.addListener((activeInfo) => {
 
 // Listen for manual zoom changes to auto-save per-site preferences
 chrome.tabs.onZoomChange.addListener((zoomChangeInfo) => {
+  if (MANUAL_DEVELOPMENT_BUILD) return;
   const { tabId, newZoomFactor, oldZoomFactor } = zoomChangeInfo;
 
   // Ignore if we caused this zoom (within last 500ms)
