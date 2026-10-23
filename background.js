@@ -1,3 +1,8 @@
+function normalizeCustomPresets(values) {
+  if (!Array.isArray(values)) return [];
+  return [...new Set(values.filter(value => Number.isInteger(value) && value >= 25 && value <= 500))].slice(0, 6);
+}
+
 // Separate-ID development builds do not compete with production passive zoom handlers.
 const MANUAL_DEVELOPMENT_BUILD = chrome.runtime.getManifest().version_name?.endsWith(" manual development") === true;
 // --- Constants and Initial Setup ---
@@ -797,7 +802,7 @@ async function exportSettings() {
           isToggledActive: data.isToggledActive || false,
           siteSettings: data.siteSettings || {},
           excludedSites: data.excludedSites || { exact: [], patterns: [] },
-          customPresets: data.customPresets || []
+          customPresets: normalizeCustomPresets(data.customPresets)
         }
       };
       resolve({ success: true, data: exportData });
@@ -836,7 +841,7 @@ async function importSettings(importData, mergeMode = 'replace') {
           isToggledActive: settings.isToggledActive ?? false,
           siteSettings: settings.siteSettings ?? {},
           excludedSites: settings.excludedSites ?? { exact: [], patterns: [] },
-          customPresets: Array.isArray(settings.customPresets) ? settings.customPresets : []
+          customPresets: normalizeCustomPresets(settings.customPresets)
         };
       } else if (mergeMode === 'merge') {
         // Merge with existing settings
@@ -851,9 +856,9 @@ async function importSettings(importData, mergeMode = 'replace') {
           patterns: [...new Set([...(currentExcluded.patterns || []), ...(importExcluded.patterns || [])])]
         };
 
-        const currentCustomPresets = currentData.customPresets || [];
-        const importCustomPresets = Array.isArray(settings.customPresets) ? settings.customPresets : [];
-        const mergedCustomPresets = [...new Set([...currentCustomPresets, ...importCustomPresets])].slice(0, 6);
+        const currentCustomPresets = normalizeCustomPresets(currentData.customPresets);
+        const importCustomPresets = normalizeCustomPresets(settings.customPresets);
+        const mergedCustomPresets = normalizeCustomPresets([...currentCustomPresets, ...importCustomPresets]);
 
         newSettings = {
           toggleZoom: settings.toggleZoom ?? currentData.toggleZoom ?? DEFAULT_TOGGLE_ZOOM,
@@ -881,14 +886,16 @@ async function importSettings(importData, mergeMode = 'replace') {
 // Check if user has any custom settings (for determining import behavior)
 async function checkHasCustomSettings() {
   return new Promise((resolve) => {
-    chrome.storage.sync.get(['siteSettings', 'excludedSites', 'toggleZoom'], (data) => {
+    chrome.storage.sync.get(['siteSettings', 'excludedSites', 'toggleZoom', 'customPresets'], (data) => {
       const hasCustomSites = Object.keys(data.siteSettings || {}).length > 0;
       const hasExclusions = (data.excludedSites?.exact?.length || 0) > 0 ||
                            (data.excludedSites?.patterns?.length || 0) > 0;
       const hasCustomZoom = data.toggleZoom && data.toggleZoom !== 150;
+      const presetCount = normalizeCustomPresets(data.customPresets).length;
 
       resolve({
-        hasCustomSettings: hasCustomSites || hasExclusions || hasCustomZoom,
+        hasCustomSettings: Boolean(hasCustomSites || hasExclusions || hasCustomZoom || presetCount),
+        presetCount,
         siteCount: Object.keys(data.siteSettings || {}).length,
         exclusionCount: (data.excludedSites?.exact?.length || 0) + (data.excludedSites?.patterns?.length || 0)
       });

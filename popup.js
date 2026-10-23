@@ -1,3 +1,8 @@
+function normalizeCustomPresets(values) {
+  if (!Array.isArray(values)) return [];
+  return [...new Set(values.filter(value => Number.isInteger(value) && value >= 25 && value <= 500))].slice(0, 6);
+}
+
 document.addEventListener('DOMContentLoaded', function() {
   // --- Constants ---
   const ZOOM_MIN = 25;
@@ -76,7 +81,7 @@ document.addEventListener('DOMContentLoaded', function() {
     isZoomEnabled = data.isToggledActive || false;
     zoomLevelInput.value = data.toggleZoom || DEFAULT_TOGGLE_ZOOM;
     updateZoomToggleButton(isZoomEnabled);
-    customPresets = Array.isArray(data.customPresets) ? data.customPresets : [];
+    customPresets = normalizeCustomPresets(data.customPresets);
     renderCustomPresets();
     loadCurrentSite(data);
   });
@@ -533,7 +538,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (checkResult?.hasCustomSettings) {
               // Ask user how to handle import
               const choice = confirm(
-                `You have existing settings (${checkResult.siteCount} sites, ${checkResult.exclusionCount} exclusions).\n\n` +
+                `You have existing settings (${checkResult.siteCount} sites, ${checkResult.exclusionCount} exclusions, ${checkResult.presetCount || 0} presets).\n\n` +
                 'Click OK to REPLACE all settings with imported data.\n' +
                 'Click Cancel to MERGE (keep existing + add new).'
               );
