@@ -1,3 +1,10 @@
+function normalizeCustomPresets(values) {
+  if (!Array.isArray(values)) return [];
+  return [...new Set(values.filter(value => Number.isInteger(value) && value >= 25 && value <= 500))].slice(0, 6);
+}
+
+// Separate-ID development builds do not compete with production passive zoom handlers.
+const MANUAL_DEVELOPMENT_BUILD = chrome.runtime.getManifest().version_name?.endsWith(" manual development") === true;
 // --- Constants and Initial Setup ---
 const CONTEXT_MENU_ID = "configureZoom";
 const CONTEXT_MENU_SITES_ID = "manageSites";
@@ -21,7 +28,8 @@ const STORAGE_DEFAULTS = {
   toggleModeEnabled: false,
   isToggledActive: false,
   siteSettings: {},
-  excludedSites: { exact: [], patterns: [] }
+  excludedSites: { exact: [], patterns: [] },
+  customPresets: []
 };
 
 // Track extension-initiated zooms to ignore in onZoomChange
@@ -116,6 +124,9 @@ function ensureStorageDefaults(callback) {
           patterns: Array.isArray(data.excludedSites.patterns) ? data.excludedSites.patterns : []
         };
       }
+    }
+    if (!Array.isArray(data.customPresets)) {
+      updates.customPresets = STORAGE_DEFAULTS.customPresets;
     }
 
     if (Object.keys(updates).length > 0) {
@@ -226,6 +237,7 @@ chrome.commands.onCommand.addListener((command) => {
 
 // Listen for tab updates to apply the correct zoom to future tabs in either mode.
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (MANUAL_DEVELOPMENT_BUILD) return;
   if (changeInfo.status === 'complete' && isZoomableUrl(tab.url)) {
     applyZoomToFutureTab(tabId);
     // Update context menu visibility for this tab
@@ -240,6 +252,7 @@ chrome.tabs.onActivated.addListener((activeInfo) => {
 
 // Listen for manual zoom changes to auto-save per-site preferences
 chrome.tabs.onZoomChange.addListener((zoomChangeInfo) => {
+  if (MANUAL_DEVELOPMENT_BUILD) return;
   const { tabId, newZoomFactor, oldZoomFactor } = zoomChangeInfo;
 
   // Ignore if we caused this zoom (within last 500ms)
@@ -630,8 +643,8 @@ function logContextMenuError() {
 // Update the extension icon badge to show zoom state
 function updateZoomStateBadge(isActive) {
   if (isActive) {
-    chrome.action.setBadgeText({ text: '+' });
-    chrome.action.setBadgeBackgroundColor({ color: '#2da44e' });
+    chrome.action.setBadgeText({ text: 'ON' });
+    chrome.action.setBadgeBackgroundColor({ color: '#0969da' });
   } else {
     chrome.action.setBadgeText({ text: '' });
   }
@@ -788,7 +801,8 @@ async function exportSettings() {
           toggleModeEnabled: data.toggleModeEnabled || false,
           isToggledActive: data.isToggledActive || false,
           siteSettings: data.siteSettings || {},
-          excludedSites: data.excludedSites || { exact: [], patterns: [] }
+          excludedSites: data.excludedSites || { exact: [], patterns: [] },
+          customPresets: normalizeCustomPresets(data.customPresets)
         }
       };
       resolve({ success: true, data: exportData });
@@ -826,7 +840,8 @@ async function importSettings(importData, mergeMode = 'replace') {
           toggleModeEnabled: settings.toggleModeEnabled ?? false,
           isToggledActive: settings.isToggledActive ?? false,
           siteSettings: settings.siteSettings ?? {},
-          excludedSites: settings.excludedSites ?? { exact: [], patterns: [] }
+          excludedSites: settings.excludedSites ?? { exact: [], patterns: [] },
+          customPresets: normalizeCustomPresets(settings.customPresets)
         };
       } else if (mergeMode === 'merge') {
         // Merge with existing settings
@@ -841,12 +856,17 @@ async function importSettings(importData, mergeMode = 'replace') {
           patterns: [...new Set([...(currentExcluded.patterns || []), ...(importExcluded.patterns || [])])]
         };
 
+        const currentCustomPresets = normalizeCustomPresets(currentData.customPresets);
+        const importCustomPresets = normalizeCustomPresets(settings.customPresets);
+        const mergedCustomPresets = normalizeCustomPresets([...currentCustomPresets, ...importCustomPresets]);
+
         newSettings = {
           toggleZoom: settings.toggleZoom ?? currentData.toggleZoom ?? DEFAULT_TOGGLE_ZOOM,
           toggleModeEnabled: settings.toggleModeEnabled ?? currentData.toggleModeEnabled ?? false,
           isToggledActive: settings.isToggledActive ?? currentData.isToggledActive ?? false,
           siteSettings: mergedSiteSettings,
-          excludedSites: mergedExcluded
+          excludedSites: mergedExcluded,
+          customPresets: mergedCustomPresets
         };
       }
 
@@ -866,14 +886,16 @@ async function importSettings(importData, mergeMode = 'replace') {
 // Check if user has any custom settings (for determining import behavior)
 async function checkHasCustomSettings() {
   return new Promise((resolve) => {
-    chrome.storage.sync.get(['siteSettings', 'excludedSites', 'toggleZoom'], (data) => {
+    chrome.storage.sync.get(['siteSettings', 'excludedSites', 'toggleZoom', 'customPresets'], (data) => {
       const hasCustomSites = Object.keys(data.siteSettings || {}).length > 0;
       const hasExclusions = (data.excludedSites?.exact?.length || 0) > 0 ||
                            (data.excludedSites?.patterns?.length || 0) > 0;
       const hasCustomZoom = data.toggleZoom && data.toggleZoom !== 150;
+      const presetCount = normalizeCustomPresets(data.customPresets).length;
 
       resolve({
-        hasCustomSettings: hasCustomSites || hasExclusions || hasCustomZoom,
+        hasCustomSettings: Boolean(hasCustomSites || hasExclusions || hasCustomZoom || presetCount),
+        presetCount,
         siteCount: Object.keys(data.siteSettings || {}).length,
         exclusionCount: (data.excludedSites?.exact?.length || 0) + (data.excludedSites?.patterns?.length || 0)
       });

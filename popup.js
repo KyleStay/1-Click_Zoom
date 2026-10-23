@@ -1,3 +1,8 @@
+function normalizeCustomPresets(values) {
+  if (!Array.isArray(values)) return [];
+  return [...new Set(values.filter(value => Number.isInteger(value) && value >= 25 && value <= 500))].slice(0, 6);
+}
+
 document.addEventListener('DOMContentLoaded', function() {
   // --- Constants ---
   const ZOOM_MIN = 25;
@@ -6,6 +11,7 @@ document.addEventListener('DOMContentLoaded', function() {
   const STATUS_DISPLAY_MS = 2500;
   const CLOSE_DELAY_MS = 300;
   const VALID_URL_PREFIXES = ['http', 'file'];
+  const MAX_CUSTOM_PRESETS = 6;
 
   // Helper to check if a URL is zoomable
   function isZoomableUrl(url) {
@@ -50,11 +56,16 @@ document.addEventListener('DOMContentLoaded', function() {
   const importBtn = document.getElementById('importBtn');
   const importFileInput = document.getElementById('importFileInput');
 
+  // Custom presets elements
+  const customPresetsArea = document.getElementById('custom-presets-area');
+  const addCustomPresetBtn = document.getElementById('add-custom-preset-btn');
+
   // Current tab state
   let currentHostname = null;
   let currentRootDomain = null;
   let currentExclusionInfo = null;
   let isZoomEnabled = false;
+  let customPresets = [];
 
   // Helper to extract root domain from hostname
   function getRootDomain(hostname) {
@@ -65,11 +76,13 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // --- Load Initial State ---
-  chrome.storage.sync.get(['toggleZoom', 'toggleModeEnabled', 'isToggledActive', 'siteSettings'], (data) => {
+  chrome.storage.sync.get(['toggleZoom', 'toggleModeEnabled', 'isToggledActive', 'siteSettings', 'customPresets'], (data) => {
     toggleModeCheckbox.checked = data.toggleModeEnabled || false;
     isZoomEnabled = data.isToggledActive || false;
     zoomLevelInput.value = data.toggleZoom || DEFAULT_TOGGLE_ZOOM;
     updateZoomToggleButton(isZoomEnabled);
+    customPresets = normalizeCustomPresets(data.customPresets);
+    renderCustomPresets();
     loadCurrentSite(data);
   });
 
@@ -401,6 +414,76 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
+  // --- Custom Presets ---
+
+  function renderCustomPresets() {
+    if (!customPresetsArea) return;
+
+    // Remove all existing custom preset groups (keep the add button)
+    customPresetsArea.querySelectorAll('.custom-preset-group').forEach(el => el.remove());
+
+    // Insert custom preset buttons before the add button
+    customPresets.forEach(zoom => {
+      const group = document.createElement('div');
+      group.className = 'custom-preset-group';
+
+      const applyBtn = document.createElement('button');
+      applyBtn.className = 'custom-preset-apply';
+      applyBtn.textContent = `${zoom}%`;
+      applyBtn.title = `Apply ${zoom}% zoom`;
+      applyBtn.addEventListener('click', () => {
+        zoomLevelInput.value = zoom;
+        saveAndApply(zoom, false);
+      });
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'custom-preset-delete';
+      deleteBtn.textContent = '×';
+      deleteBtn.title = `Remove ${zoom}% preset`;
+      deleteBtn.addEventListener('click', () => {
+        customPresets = customPresets.filter(p => p !== zoom);
+        chrome.storage.sync.set({ customPresets }, () => {
+          renderCustomPresets();
+          showStatus(`Preset ${zoom}% removed`, 'green');
+        });
+      });
+
+      group.appendChild(applyBtn);
+      group.appendChild(deleteBtn);
+      customPresetsArea.insertBefore(group, addCustomPresetBtn);
+    });
+
+    // Show/hide the add button based on limit
+    if (addCustomPresetBtn) {
+      addCustomPresetBtn.style.display = customPresets.length >= MAX_CUSTOM_PRESETS ? 'none' : 'inline-block';
+    }
+  }
+
+  if (addCustomPresetBtn) {
+    addCustomPresetBtn.addEventListener('click', () => {
+      const zoomLevel = parseInt(zoomLevelInput.value, 10);
+
+      if (isNaN(zoomLevel) || zoomLevel < ZOOM_MIN || zoomLevel > ZOOM_MAX) {
+        showStatus(`Invalid zoom (${ZOOM_MIN}-${ZOOM_MAX}).`, 'red');
+        return;
+      }
+      if (customPresets.includes(zoomLevel)) {
+        showStatus(`${zoomLevel}% already saved.`, 'red');
+        return;
+      }
+      if (customPresets.length >= MAX_CUSTOM_PRESETS) {
+        showStatus('Max 6 custom presets.', 'red');
+        return;
+      }
+
+      customPresets = [...customPresets, zoomLevel].sort((a, b) => a - b);
+      chrome.storage.sync.set({ customPresets }, () => {
+        renderCustomPresets();
+        showStatus(`Preset ${zoomLevel}% saved!`, 'green');
+      });
+    });
+  }
+
   // --- Import/Export Handlers ---
 
   // Export settings
@@ -455,7 +538,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (checkResult?.hasCustomSettings) {
               // Ask user how to handle import
               const choice = confirm(
-                `You have existing settings (${checkResult.siteCount} sites, ${checkResult.exclusionCount} exclusions).\n\n` +
+                `You have existing settings (${checkResult.siteCount} sites, ${checkResult.exclusionCount} exclusions, ${checkResult.presetCount || 0} presets).\n\n` +
                 'Click OK to REPLACE all settings with imported data.\n' +
                 'Click Cancel to MERGE (keep existing + add new).'
               );
